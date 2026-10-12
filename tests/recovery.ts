@@ -4,8 +4,8 @@ import {matchMaker} from '@colyseus/core';
 import {PROTOCOL,CONTENT} from '../packages/shared/src/content';
 import {idleInput} from '../packages/shared/src/protocol';
 import type {ExpeditionRoom} from '../apps/server/src/ExpeditionRoom';
-const delay=(ms:number)=>new Promise(r=>setTimeout(r,ms));process.env.HOLLOW_TEST='1';const{startServer}=await import('../apps/server/src/index');const{server}=await startServer(2571);
-const sdk=new Client('ws://127.0.0.1:2571'),options={protocol:PROTOCOL,content:CONTENT,name:'Recovery tester',classId:'marksman'};
+const delay=(ms:number)=>new Promise(r=>setTimeout(r,ms));process.env.HOLLOW_TEST='1';const{startServer}=await import('../apps/server/src/index');const{server}=await startServer(2572);
+const sdk=new Client('ws://127.0.0.1:2572'),options={protocol:PROTOCOL,content:CONTENT,name:'Recovery tester',classId:'marksman'};
 try{
  await assert.rejects(sdk.create('expedition',{...options,content:'incompatible'}));
  const a=await sdk.create('expedition',options),b=await sdk.joinById(a.roomId,options);let personal:any;

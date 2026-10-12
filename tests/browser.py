@@ -8,7 +8,7 @@ async def main():
     async with async_playwright() as p:
         browser=await p.chromium.launch(executable_path='/usr/bin/chromium', headless=True, args=['--no-sandbox','--disable-dev-shm-usage','--use-angle=swiftshader','--enable-unsafe-swiftshader','--enable-webgl'])
         context=await browser.new_context(viewport={'width':1280,'height':720})
-        page=await context.new_page(); page.on('pageerror',lambda e:errors.append(str(e)))
+        page=await context.new_page(); page.on('pageerror',lambda e:errors.append(e.stack))
         await page.goto(os.environ.get('HOLLOW_CLIENT_URL','http://127.0.0.1:2567/'))
         await page.locator('#solo').wait_for(); await page.screenshot(path=str(output/'title.png'))
         await page.locator('#name').fill('Browser Warden'); await page.locator('#solo').click()

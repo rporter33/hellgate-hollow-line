@@ -19,6 +19,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:serialization
+      - run: npm run test:destruction
       - run: npm run test:rooms
       - run: npm run test:full
       - run: npm run build

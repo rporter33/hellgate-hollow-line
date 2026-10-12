@@ -1,7 +1,8 @@
 import {ActorState,EffectState,WorldState} from '../../../packages/shared/src/schema';
-import {CLASSES,ENEMIES,SCALING,ZONES,obstacles,RELICS,MODS,AFFIXES,type ClassId,type EnemyId,type Item,type PrivateState} from '../../../packages/shared/src/content';
+import {CLASSES,ENEMIES,SCALING,ZONES,obstacles,obstacleById,RELICS,MODS,AFFIXES,type ClassId,type EnemyId,type Item,type PrivateState,type Box} from '../../../packages/shared/src/content';
+import {unsupportedBlocks} from '../../../packages/shared/src/architecture';
 import {idleInput,parseInput,type Input} from '../../../packages/shared/src/protocol';
-import {move,distance,obstruction,rayBox,angleDiff,clamp,rng,hash,segmentDistance} from '../../../packages/shared/src/math';
+import {move,distance,obstruction,rayBox,rayBox3,rayCandidates,sphereBox,walkBlocking,angleDiff,clamp,rng,hash,segmentDistance} from '../../../packages/shared/src/math';
 import {waypoint} from '../../../packages/shared/src/navigation';
 import {companionInput} from './Companion';
 const DT=1/30;
@@ -14,6 +15,7 @@ type Checkpoint={stage:number;broken:[string,number][];cover:[string,number][];p
 export class Game {
  pd=new Map<string,PlayerData>();ed=new Map<string,EnemyData>();fd=new Map<string,EffectData>();checkpoint?:Checkpoint;
  uid=0;waveQueue:EnemyId[]=[];nextWave=0;wipeAt=0;runStart=0;cryptDone=false;startParty=1;tickCost:number[]=[];
+ dirtyBuildings=new Set<string>();collapses=new Map<string,{at:number;blocks:Box[];hits:Set<string>}>();
  constructor(public s:WorldState,public sendPrivate:(id:string,v:PrivateState)=>void=()=>{},public event:(v:any)=>void=()=>{}){}
  addPlayer(p:ActorState){if(!p.kind)p.kind='player';this.s.players.set(p.id,p);this.resetPlayer(p,true);}
  setCompanions(id:string,count:number){if(id!==this.s.leader||this.s.phase!=='lobby'||!Number.isInteger(count)||count<0||count>2)return false;
@@ -60,7 +62,7 @@ export class Game {
   const p=new ActorState(),base=ENEMIES[kind],scale=SCALING[this.s.partySize-1];p.id=this.id('enemy');p.name=base.name;p.kind=kind;p.x=x;p.z=z;p.hp=p.maxHp=base.hp*(kind==='bellwether'?scale.boss:scale.health)*(elite?1.3:1);p.elite=elite;p.plateL=p.plateR=kind==='bellwether'?150*scale.boss:0;p.yaw=Math.PI;p.action='idle';
   this.s.enemies.set(p.id,p);this.ed.set(p.id,{next:this.s.time+.8,guards:[],lastGuard:-10,attack:0,target:'',adds:false,hits:new Set(),fromX:x,fromZ:z,lastX:x,lastZ:z,pathAt:0,nx:x,nz:z});
   // Resolve placement against solid cover, rather than spawning inside it.
-  const b=obstacles(this.s.stage).find(b=>!this.s.broken.has(b.id)&&Math.abs(x-b.x)<b.w/2+base.radius&&Math.abs(z-b.z)<b.d/2+base.radius);if(b)p.x=b.x+b.w/2+base.radius+.1;
+  const b=obstacles(this.s.stage).find(b=>walkBlocking(b)&&!this.s.broken.has(b.id)&&Math.abs(x-b.x)<b.w/2+base.radius&&Math.abs(z-b.z)<b.d/2+base.radius);if(b)p.x=b.x+b.w/2+base.radius+.1;
   return p;
  }
  clearEncounter(){this.s.cleared=true;this.nextWave=0;this.s.message='Breach cleared · recover your cache';
@@ -82,11 +84,11 @@ export class Game {
   for(const p of this.s.players.values())this.playerStep(p);
   if(this.s.phase==='play'){
    for(const e of [...this.s.enemies.values()])this.enemyStep(e);
-   this.effectStep();this.fillWave();
+   this.effectStep();this.structureStep();this.fillWave();
    if(!this.s.enemies.size&&!this.waveQueue.length&&!this.s.cleared){if(!this.nextWave)this.nextWave=this.s.time+2;if(this.s.time>=this.nextWave){this.nextWave=0;this.spawnWave();}}
    const standing=[...this.s.players.values()].some(p=>p.connected&&p.status==='standing');if(!standing){if(!this.wipeAt)this.wipeAt=this.s.time+(this.s.players.size===1?0:3);if(this.s.time>=this.wipeAt){this.s.phase='wipe';this.s.message='The line has fallen. Retry the checkpoint.';this.clearEffects();for(const p of this.s.players.values())this.clearInput(p.id);}}else this.wipeAt=0;
    if(this.s.regroup&&this.s.time>=this.s.regroup)this.enter(this.s.destination);
-  }else this.effectStep();
+  }else {this.effectStep();this.structureStep();}
   this.tickCost.push(performance.now()-before);if(this.tickCost.length>1800)this.tickCost.shift();
  }
  playerStep(p:ActorState){const d=this.pd.get(p.id)!;p.ack=Math.max(p.ack,d.input.seq);if(this.s.time-d.inputAt>.3)this.clearInput(p.id);const i=d.input,now=this.s.time;
@@ -96,7 +98,7 @@ export class Game {
   if(this.s.phase==='wipe')return;
   if(i.edges.includes('dodge')&&now>=p.dodge){const len=Math.hypot(i.mx,i.mz);d.dx=len?(i.mx*Math.cos(i.yaw)+i.mz*Math.sin(i.yaw))/len:-Math.sin(i.yaw);d.dz=len?(i.mx*Math.sin(i.yaw)-i.mz*Math.cos(i.yaw))/len:Math.cos(i.yaw);d.dashUntil=now+.3;d.invUntil=now+.25;p.dodge=now+2;p.action='dodge';p.actionEnd=now+.3;d.charge=0;d.lunge=undefined;d.nextAttack=now+.3;this.event({kind:'dodge',owner:p.id,x:p.x,z:p.z});}
   const broken=new Set(this.s.broken.keys());
-  if(d.lunge&&now<d.lunge.end){const l=d.lunge,before={x:p.x,z:p.z};move(p,l.dx*6/.25*DT,l.dz*6/.25*DT,this.s.stage,broken);const trail=this.s.effects.get(l.trail);if(trail){trail.tx=p.x;trail.tz=p.z;}
+  if(d.lunge&&now<d.lunge.end){const l=d.lunge,before={x:p.x,z:p.z};const wall=this.aimCover(p,.85);if(wall&&!l.hit){this.hitCover(wall.id,45*d.stats.damage,p.id,2);l.hit=true;}move(p,l.dx*6/.25*DT,l.dz*6/.25*DT,this.s.stage,broken);const trail=this.s.effects.get(l.trail);if(trail){trail.tx=p.x;trail.tz=p.z;}
    if(!l.hit){const enemy=[...this.s.enemies.values()].find(e=>segmentDistance(e,before,p)<ENEMIES[e.kind as EnemyId].radius+.4&&!this.blocked(before,e));if(enemy){l.hit=true;this.hitEnemy(enemy,{owner:p.id,damage:45*d.stats.damage,primary:false,guard:true,kind:'lunge',attack:l.trail||this.id('attack')});p.resource=Math.min(100,p.resource+15);}}
   }
   else if(now<d.dashUntil)move(p,d.dx*3.2/.3*DT,d.dz*3.2/.3*DT,this.s.stage,broken);
@@ -129,15 +131,15 @@ export class Game {
   this.shoot(p,18,30,true,false,'rifle');if(!p.ammo)this.reload(p);
  }
  meleePlate(p:ActorState,e:ActorState):'left'|'right'|undefined{if(e.kind!=='bellwether')return;const side=(p.x-e.x)*Math.cos(e.yaw)+(p.z-e.z)*Math.sin(e.yaw);if(Math.abs(side)>.8)return side<0?'left':'right';}
- aimCover(p:ActorState,range:number){return obstacles(this.s.stage).filter(b=>!this.s.broken.has(b.id)).map(b=>({b,dist:rayBox(p.x,p.z,Math.sin(p.yaw),-Math.cos(p.yaw),b)})).sort((a,b)=>a.dist-b.dist).find(v=>v.dist<range)?.b;}
+ aimCover(p:ActorState,range:number){return rayCandidates(this.s.stage,p.x,p.z,Math.sin(p.yaw),-Math.cos(p.yaw),range).filter(b=>!this.s.broken.has(b.id)).map(b=>({b,dist:rayBox3(p.x,1.25,p.z,Math.sin(p.yaw),Math.tan(p.pitch),-Math.cos(p.yaw),b)})).sort((a,b)=>a.dist-b.dist).find(v=>v.dist<range)?.b;}
  aimed(p:ActorState,range:number){return [...this.s.enemies.values()].map(e=>({e,along:(e.x-p.x)*Math.sin(p.yaw)-(e.z-p.z)*Math.cos(p.yaw),perp:Math.abs((e.x-p.x)*Math.cos(p.yaw)+(e.z-p.z)*Math.sin(p.yaw))})).filter(v=>v.along>0&&v.along<range&&v.perp<ENEMIES[v.e.kind as EnemyId].radius+.3&&!this.blocked(p,v.e)).sort((a,b)=>a.along-b.along)[0]?.e;}
  secondary(p:ActorState){const d=this.pd.get(p.id)!,now=this.s.time;
   if(p.classId==='blademaster'){
    if(p.resource<40||now<d.nextSecondary||now<p.actionEnd)return;const extra=p.relic==='martyrs_engine'?p.resource-40:0,radius=3+extra*.015,damage=(65+extra*.8)*d.stats.damage;p.resource=p.relic==='martyrs_engine'?0:p.resource-40;d.nextSecondary=now+1;p.action='whirlwind';p.actionEnd=now+.65;const attack=this.id('attack');
-   for(const e of [...this.s.enemies.values()])if(distance(p,e)<=radius&&!this.blocked(p,e))this.hitEnemy(e,{owner:p.id,damage,primary:false,guard:true,kind:'whirlwind',attack,plate:this.meleePlate(p,e)});for(const b of obstacles(this.s.stage))if(distance(p,b)<radius+1)this.hitCover(b.id,damage,p.id);this.effect('whirlwind',p.id,p.x,p.z,radius,.65);this.event({kind:p.relic==='martyrs_engine'?'martyrs_engine':'whirlwind',owner:p.id,x:p.x,z:p.z,radius});return;
+   for(const e of [...this.s.enemies.values()])if(distance(p,e)<=radius&&!this.blocked(p,e))this.hitEnemy(e,{owner:p.id,damage,primary:false,guard:true,kind:'whirlwind',attack,plate:this.meleePlate(p,e)});for(const b of obstacles(this.s.stage))if(sphereBox(p.x,1.25,p.z,radius,b))this.hitCover(b.id,damage,p.id,extra>=40?3:2);this.effect('whirlwind',p.id,p.x,p.z,radius,.65);this.event({kind:p.relic==='martyrs_engine'?'martyrs_engine':'whirlwind',owner:p.id,x:p.x,z:p.z,radius});return;
   }
   if(p.classId==='evoker'){
-   if((now<p.actionEnd&&p.action!=='arc')||p.resource<=0)return;const target=this.aimed(p,12);if(!target){if(p.action==='arc'){p.action='idle';p.actionEnd=now;}return;}p.resource=Math.max(0,p.resource-20*DT);p.action='arc';p.actionEnd=now+.08;
+   if((now<p.actionEnd&&p.action!=='arc')||p.resource<=0)return;const target=this.aimed(p,12);if(!target){const box=this.aimCover(p,12);if(!box){if(p.action==='arc'){p.action='idle';p.actionEnd=now;}return;}p.resource=Math.max(0,p.resource-20*DT);p.action='arc';p.actionEnd=now+.08;if(now>=d.nextSecondary){d.nextSecondary=now+.25;this.hitCover(box.id,16*d.stats.damage,p.id,3);this.event({kind:'arc',owner:p.id,x:p.x,z:p.z,tx:box.x,tz:box.z,ty:clamp(1.25+Math.tan(p.pitch)*distance(p,box),box.y||0,(box.y||0)+box.h)});}return;}p.resource=Math.max(0,p.resource-20*DT);p.action='arc';p.actionEnd=now+.08;
    if(now<d.nextSecondary)return;d.nextSecondary=now+.25;const attack=this.id('attack'),visited=new Set([target.id]);this.hitEnemy(target,{owner:p.id,damage:16*d.stats.damage,primary:false,guard:true,kind:'arc',attack});this.event({kind:'arc',owner:p.id,x:p.x,z:p.z,tx:target.x,tz:target.z});let from=target;
    for(let j=0;j<2;j++){const next=this.nearEnemy(from,5,from.id,visited);if(!next)break;visited.add(next.id);this.hitEnemy(next,{owner:p.id,damage:8*d.stats.damage,primary:false,guard:false,kind:'arc_chain',attack});this.event({kind:'arc',owner:p.id,x:from.x,z:from.z,tx:next.x,tz:next.z});from=next;}return;
   }
@@ -152,24 +154,32 @@ export class Game {
    const id=this.effect('well',p.id,p.x+Math.sin(p.yaw)*range,p.z-Math.cos(p.yaw)*range,4,p.relic==='event_horizon'?4:3);if(p.relic==='event_horizon'){const f=this.fd.get(id)!;f.detonate=true;f.source={owner:p.id,damage:90*d.stats.damage,primary:false,guard:false,kind:'relic',attack:id};}this.event({kind:'well',owner:p.id,x:p.x,z:p.z});return;
   }
   p.signature=this.s.time+8*d.stats.cooldown;p.action='grenade';p.actionEnd=this.s.time+.25;
-  let range=10;const dx=Math.sin(p.yaw),dz=-Math.cos(p.yaw);for(const b of obstacles(this.s.stage))if(!this.s.broken.has(b.id))range=Math.min(range,rayBox(p.x,p.z,dx,dz,b)-.3);range=Math.max(1,range);
-  const id=this.effect('grenade',p.id,p.x+dx*range,p.z+dz*range,3,.7);const f=this.s.effects.get(id)!;f.tx=p.x;f.tz=p.z;this.fd.get(id)!.source={owner:p.id,damage:75*d.stats.damage,primary:false,guard:true,kind:'grenade',attack:id};this.fd.get(id)!.detonate=true;this.event({kind:'grenade',owner:p.id,x:p.x,z:p.z});
+  let range=10;const dx=Math.sin(p.yaw),dz=-Math.cos(p.yaw),cover=this.aimCover(p,range);if(cover)range=Math.max(.5,rayBox3(p.x,1.25,p.z,dx,Math.tan(p.pitch),dz,cover)-.15);
+  const id=this.effect('grenade',p.id,p.x+dx*range,p.z+dz*range,3,.7);const f=this.s.effects.get(id)!;f.y=Math.max(.25,1.25+Math.tan(p.pitch)*range);f.tx=p.x;f.tz=p.z;this.fd.get(id)!.source={owner:p.id,damage:75*d.stats.damage,primary:false,guard:true,kind:'grenade',attack:id};this.fd.get(id)!.detonate=true;this.event({kind:'grenade',owner:p.id,x:p.x,z:p.z});
  }
  shoot(p:ActorState,base:number,range:number,primary:boolean,guard:boolean,kind:string,maxHits=1){
   const d=this.pd.get(p.id)!,dx=Math.sin(p.yaw),dz=-Math.cos(p.yaw),attack=this.id('attack');let stop=range,boxHit:any;
   // The ray starts at the avatar muzzle. Camera peeking never changes this path.
-  for(const b of obstacles(this.s.stage))if(!this.s.broken.has(b.id)){const hit=rayBox(p.x,p.z,dx,dz,b);if(hit<stop&&b.h>=1.2){stop=hit;boxHit=b;}}
+  for(const b of rayCandidates(this.s.stage,p.x,p.z,dx,dz,range))if(!this.s.broken.has(b.id)){const hit=rayBox3(p.x,1.25,p.z,dx,Math.tan(p.pitch),dz,b);if(hit<stop){stop=hit;boxHit=b;}}
   const hits=[...this.s.enemies.values()].map(e=>{const along=(e.x-p.x)*dx+(e.z-p.z)*dz,perp=Math.abs((e.x-p.x)*dz-(e.z-p.z)*dx);return {e,along,perp};}).filter(h=>h.along>0&&h.along<stop&&h.perp<ENEMIES[h.e.kind as EnemyId].radius).sort((a,b)=>a.along-b.along).slice(0,maxHits);
-  let successful=false;for(const {e,along} of hits){const hitY=1.25+Math.tan(p.pitch)*along;const height=e.kind==='bellwether'?4:e.kind==='carrion_runner'?1.1:2;const weak=e.kind==='bellwether'?hitY>=1.6&&hitY<=2.7:hitY>height*.68&&hitY<height+ .25;
+  let successful=false;for(const {e,along} of hits){const hitY=1.25+Math.tan(p.pitch)*along;const height=ENEMIES[e.kind as EnemyId].height;const weak=e.kind==='bellwether'?hitY>=1.6&&hitY<=2.7:hitY>height*.68&&hitY<height+ .25;
    if(hitY<.2||hitY>height+.3)continue;const side=(p.x+dx*along-e.x)*Math.cos(e.yaw)+(p.z+dz*along-e.z)*Math.sin(e.yaw);const plate=e.kind==='bellwether'&&hitY>2.2&&hitY<3.5&&Math.abs(side)>.55?(side<0?'left':'right'):undefined;
    successful=this.hitEnemy(e,{owner:p.id,damage:base*d.stats.damage,primary,guard,kind,attack,weak,plate,weakMult:kind==='execution'&&p.relic==='long_watch'?2:1.5})||successful;if(maxHits===1)stop=along;
   }
-  if(!successful&&boxHit)this.hitCover(boxHit.id,base*d.stats.damage,p.id);
+  if(!successful&&boxHit)this.hitCover(boxHit.id,base*d.stats.damage,p.id,kind==='execution'?3:1);
   if(primary&&successful)this.primaryProc(p,attack,hits[0].e);
-  this.event({kind,owner:p.id,x:p.x,z:p.z,tx:p.x+dx*stop,tz:p.z+dz*stop});
+  this.event({kind,owner:p.id,x:p.x,z:p.z,tx:p.x+dx*stop,ty:1.25+Math.tan(p.pitch)*stop,tz:p.z+dz*stop});
  }
- hitCover(id:string,damage:number,owner:string){const b=obstacles(this.s.stage).find(b=>b.id===id);if(!b?.breakable||this.s.broken.has(id))return;const p=this.s.players.get(owner),mult=p?.mod==='breach_core'?1.5:1;
-  const hp=(this.s.coverHealth.get(id)??b.hp??60)-damage*mult;this.s.coverHealth.set(id,Math.max(0,hp));if(hp<=0){this.s.broken.set(id,this.s.revision);for(const data of this.ed.values())data.pathAt=0;this.event({kind:'break',id,x:b.x,z:b.z});}
+ hitCover(id:string,damage:number,owner:string,power=1){const b=obstacleById(this.s.stage,id);if(!b?.breakable||this.s.broken.has(id))return;const p=this.s.players.get(owner),mult=p?.mod==='breach_core'?1.5:1;
+  if(power<(b.power||1)){this.event({kind:'material_resist',owner,id,x:b.x,y:(b.y||0)+b.h/2,z:b.z,material:b.material});return;}
+  const hp=(this.s.coverHealth.get(id)??b.hp??60)-damage*mult;this.s.coverHealth.set(id,Math.max(0,hp));if(hp<=0)this.breakBlock(b);
+ }
+ breakBlock(b:Box,collapse=false){if(this.s.broken.has(b.id))return;this.s.broken.set(b.id,this.s.revision);this.s.coverHealth.delete(b.id);for(const data of this.ed.values())data.pathAt=0;if(b.building&&!collapse)this.dirtyBuildings.add(b.building);this.event({kind:collapse?'collapse':'break',id:b.id,x:b.x,y:(b.y||0)+b.h/2,z:b.z,material:b.material});}
+ structureStep(){
+  for(const building of this.dirtyBuildings){const loose=unsupportedBlocks(obstacles(this.s.stage).filter(b=>b.building===building),new Set(this.s.broken.keys()));const chunks=new Map<string,Box[]>();for(const b of loose){const list=chunks.get(b.chunk!)||[];list.push(b);chunks.set(b.chunk!,list);}for(const [chunk,blocks]of chunks)if(!this.collapses.has(chunk)){this.collapses.set(chunk,{at:this.s.time+1,blocks,hits:new Set()});const low=blocks[0],id=this.effect('collapse_warning',chunk,low.x,low.z,2.4,1);this.s.effects.get(id)!.y=.04;this.event({kind:'collapse_warning',x:low.x,z:low.z});}}
+  this.dirtyBuildings.clear();let budget=8;
+  for(const [chunk,c]of this.collapses){if(this.s.time<c.at)continue;while(c.blocks.length&&budget>0){const b=c.blocks.shift()!;if(this.s.broken.has(b.id))continue;this.breakBlock(b,true);budget--;const height=(b.y||0)+b.h/2,id=this.effect('falling_block',b.id,b.x,b.z,Math.max(b.w,b.d)/2,Math.max(.25,Math.sqrt(2*height/9.8)));this.s.effects.get(id)!.y=height;const data=this.fd.get(id)!;data.detonate=true;data.hits=c.hits;}
+   if(!c.blocks.length)this.collapses.delete(chunk);if(!budget)break;}
  }
  hitEnemy(e:ActorState,source:Source){if(!this.s.enemies.has(e.id)||e.action==='transition')return false;const p=this.s.players.get(source.owner),data=this.ed.get(e.id)!;let damage=source.damage;
   if(e.kind==='bellwether'&&source.plate&&this.hitPlate(e,source.plate,damage,source.owner))return true;
@@ -231,7 +241,7 @@ export class Game {
    if(now<e.actionEnd)return;
    if(e.action==='sweep_tell'){
     e.yaw=Math.atan2(p.x-e.x,-(p.z-e.z));for(const player of this.s.players.values())if(distance(e,player)<=5&&Math.abs(angleDiff(e.yaw,Math.atan2(player.x-e.x,-(player.z-e.z))))<Math.PI*.65&&!this.blocked(e,player))this.damagePlayer(player,35);
-    for(const b of obstacles(this.s.stage))if(distance(e,b)<6)this.hitCover(b.id,60,'');this.event({kind:'boss_sweep',x:e.x,z:e.z});
+    for(const b of obstacles(this.s.stage))if(sphereBox(e.x,1.5,e.z,5,b))this.hitCover(b.id,60,'',3);this.event({kind:'boss_sweep',x:e.x,z:e.z});
    }else if(e.action==='ring_tell'){this.effect('boss_ring',e.id,e.x,e.z,20,2.2);this.event({kind:'bell',x:e.x,z:e.z});}
    e.action='recover';e.actionEnd=now+1.4;d.next=e.actionEnd;return;
   }
@@ -249,28 +259,29 @@ export class Game {
   this.event({kind:'impact',enemy:e.kind,x:e.x,z:e.z});
  }
  effect(kind:string,owner:string,x:number,z:number,radius:number,duration:number){const f=new EffectState();f.id=this.id('fx');f.kind=kind;f.owner=owner;f.x=x;f.z=z;f.radius=radius;f.start=this.s.time;f.end=this.s.time+duration;this.s.effects.set(f.id,f);this.fd.set(f.id,{hits:new Set(),vx:0,vz:0,vy:0,remaining:30,height:1.2});return f.id;}
- clearEffects(){this.s.effects.clear();this.fd.clear();}
+ clearEffects(){this.s.effects.clear();this.fd.clear();this.collapses.clear();this.dirtyBuildings.clear();}
  effectStep(){
   const wells=[...this.s.effects.values()].filter(f=>f.kind==='well');for(const e of this.s.enemies.values()){if(e.kind==='bellwether')continue;const f=wells.filter(f=>distance(f,e)<=f.radius&&!this.blocked(f,e)).sort((a,b)=>distance(a,e)-distance(b,e))[0];if(f){const dist=Math.max(.3,distance(f,e)),speed=2*(e.kind==='ironbound_bulwark'?.35:1);move(e,(f.x-e.x)/dist*speed*DT,(f.z-e.z)/dist*speed*DT,this.s.stage,new Set(this.s.broken.keys()),ENEMIES[e.kind as EnemyId].radius);}}
   for(const f of [...this.s.effects.values()]){const d=this.fd.get(f.id)!;
   if(f.kind==='red_wake'&&distance(f,{x:f.tx,z:f.tz})>.1)for(const e of [...this.s.enemies.values()])if(!d.hits.has(e.id)&&segmentDistance(e,f,{x:f.tx,z:f.tz})<.5+ENEMIES[e.kind as EnemyId].radius&&!this.blocked(f,e)){d.hits.add(e.id);this.hitEnemy(e,d.source!);}
   if(f.kind==='boss_ring'){const radius=(this.s.time-f.start)/(f.end-f.start)*f.radius;const width=f.radius*DT/(f.end-f.start)+.35;for(const p of this.s.players.values())if(!d.hits.has(p.id)&&Math.abs(distance(f,p)-radius)<=width){d.hits.add(p.id);this.damagePlayer(p,25);}}
   if(d.vx||d.vz){const before={x:f.x,z:f.z};f.x+=d.vx*DT;f.z+=d.vz*DT;f.y+=d.vy*DT;d.remaining-=Math.hypot(d.vx,d.vz)*DT;
-   if(this.blocked(before,f)||d.remaining<=0){if(f.kind==='ember'){const box=obstacles(this.s.stage).find(b=>!this.s.broken.has(b.id)&&rayBox(before.x,before.z,d.vx/24,d.vz/24,b)<=24*DT);if(box)this.hitCover(box.id,d.source!.damage,f.owner);}this.s.effects.delete(f.id);this.fd.delete(f.id);continue;}
+   const speed=Math.hypot(d.vx,d.vz),rayHits=rayCandidates(this.s.stage,before.x,before.z,d.vx/speed,d.vz/speed,speed*DT).filter(b=>!this.s.broken.has(b.id)).map(b=>({b,t:rayBox3(before.x,f.y-d.vy*DT,before.z,d.vx/speed,d.vy/speed,d.vz/speed,b)})).filter(v=>v.t<=speed*DT).sort((a,b)=>a.t-b.t);if(rayHits.length||d.remaining<=0){if(f.kind==='ember'&&rayHits.length)this.hitCover(rayHits[0].b.id,d.source!.damage,f.owner);this.s.effects.delete(f.id);this.fd.delete(f.id);continue;}
    if(f.kind==='spit')for(const p of this.s.players.values())if(segmentDistance(p,before,f)<.65){this.damagePlayer(p,d.source!.damage);f.end=this.s.time;break;}
-   if(f.kind==='ember')for(const e of [...this.s.enemies.values()]){const height=e.kind==='bellwether'?4:e.kind==='carrion_runner'?1.1:2;if(segmentDistance(e,before,f)<ENEMIES[e.kind as EnemyId].radius&&f.y>.1&&f.y<height+.3){const side=(f.x-e.x)*Math.cos(e.yaw)+(f.z-e.z)*Math.sin(e.yaw);const plate:'left'|'right'|undefined=e.kind==='bellwether'&&f.y>2.2&&f.y<3.5&&Math.abs(side)>.55?(side<0?'left':'right'):undefined;const source={...d.source!,plate,weak:e.kind==='bellwether'?f.y>=1.6&&f.y<=2.7:f.y>height*.68};const hit=this.hitEnemy(e,source);const p=this.s.players.get(f.owner);if(p&&hit)this.primaryProc(p,source.attack,e);f.end=this.s.time;break;}}
+   if(f.kind==='ember')for(const e of [...this.s.enemies.values()]){const height=ENEMIES[e.kind as EnemyId].height;if(segmentDistance(e,before,f)<ENEMIES[e.kind as EnemyId].radius&&f.y>.1&&f.y<height+.3){const side=(f.x-e.x)*Math.cos(e.yaw)+(f.z-e.z)*Math.sin(e.yaw);const plate:'left'|'right'|undefined=e.kind==='bellwether'&&f.y>2.2&&f.y<3.5&&Math.abs(side)>.55?(side<0?'left':'right'):undefined;const source={...d.source!,plate,weak:e.kind==='bellwether'?f.y>=1.6&&f.y<=2.7:f.y>height*.68};const hit=this.hitEnemy(e,source);const p=this.s.players.get(f.owner);if(p&&hit)this.primaryProc(p,source.attack,e);f.end=this.s.time;break;}}
   }
   if(this.s.time>=f.end){
    if(d.detonate){
-    if(f.kind==='volatile'){for(const p of this.s.players.values())if(distance(f,p)<=f.radius)this.damagePlayer(p,25);}
-    else if(f.kind==='ground_strike'){for(const p of this.s.players.values())if(!d.hits.has(p.id)&&distance(f,p)<=f.radius&&!this.blocked(f,p)){d.hits.add(p.id);this.damagePlayer(p,25);}for(const b of obstacles(this.s.stage))if(distance(f,b)<f.radius+1.5)this.hitCover(b.id,60,'');}
+    if(f.kind==='falling_block'){for(const p of this.s.players.values())if(!d.hits.has(p.id)&&distance(f,p)<=f.radius+.4){d.hits.add(p.id);this.damagePlayer(p,20);}}
+    else if(f.kind==='volatile'){for(const p of this.s.players.values())if(distance(f,p)<=f.radius)this.damagePlayer(p,25);}
+    else if(f.kind==='ground_strike'){for(const p of this.s.players.values())if(!d.hits.has(p.id)&&distance(f,p)<=f.radius&&!this.blocked(f,p)){d.hits.add(p.id);this.damagePlayer(p,25);}for(const b of obstacles(this.s.stage))if(sphereBox(f.x,.4,f.z,f.radius,b))this.hitCover(b.id,60,'',3);}
     else if(d.source)this.explode(f,d.source);
     this.event({kind:'explosion',x:f.x,z:f.z,radius:f.radius});
    }
    this.s.effects.delete(f.id);this.fd.delete(f.id);
   }
  }}
- explode(f:EffectState,source:Source){for(const e of [...this.s.enemies.values()])if(distance(f,e)<=f.radius&&!this.blocked(f,e)){this.hitEnemy(e,source);if(e.kind==='bellwether'){this.hitPlate(e,'left',source.damage,source.owner);this.hitPlate(e,'right',source.damage,source.owner);}}for(const b of obstacles(this.s.stage))if(Math.hypot(b.x-f.x,b.z-f.z)<=f.radius+Math.max(b.w,b.d)/2)this.hitCover(b.id,source.damage,source.owner);}
+ explode(f:EffectState,source:Source){for(const e of [...this.s.enemies.values()])if(distance(f,e)<=f.radius&&!this.blocked(f,e)){this.hitEnemy(e,source);if(e.kind==='bellwether'){this.hitPlate(e,'left',source.damage,source.owner);this.hitPlate(e,'right',source.damage,source.owner);}}for(const b of obstacles(this.s.stage))if(sphereBox(f.x,f.y||.5,f.z,f.radius,b))this.hitCover(b.id,source.damage,source.owner,3);}
  interact(p:ActorState){const d=this.pd.get(p.id)!,now=this.s.time;
   if(this.s.cleared&&this.s.stage===2&&this.s.broken.has('crypt_wall')&&distance(p,{x:9,z:-7})<3&&p.id===this.s.leader&&!this.cryptDone){this.transition(p.id,3);return;}
   const ally=[...this.s.players.values()].find(a=>a.id!==p.id&&a.status==='downed'&&distance(p,a)<=2.5&&!this.blocked(p,a));
@@ -329,6 +340,6 @@ export class Game {
   this.private(id);return true;
  }
  updateStats(p:ActorState){const d=this.pd.get(p.id)!,c=CLASSES[p.classId as ClassId],totals:Record<string,number>={damage:0,rate:0,speed:0,cooldown:0,hp:0,armor:0};for(const item of Object.values(d.inventory.equipment))for(const a of item?.affixes||[])totals[AFFIXES[a.id].stat]+=a.value;
-  d.stats={damage:1+totals.damage,rate:1+totals.rate,speed:1+Math.min(.2,totals.speed),cooldown:1-Math.min(.25,totals.cooldown),hp:c.hp+totals.hp,armor:c.armor+totals.armor};p.maxHp=d.stats.hp;p.hp=Math.min(p.hp,p.maxHp);p.relic=d.inventory.equipment.relic?.base||'';p.mod=d.inventory.equipment.weapon.mod||'';
+  d.stats={damage:1+totals.damage,rate:1+totals.rate,speed:1+Math.min(.2,totals.speed),cooldown:1-Math.min(.25,totals.cooldown),hp:c.hp+totals.hp,armor:c.armor+totals.armor};p.maxHp=d.stats.hp;p.hp=Math.min(p.hp,p.maxHp);p.relic=d.inventory.equipment.relic?.base||'';p.mod=d.inventory.equipment.weapon.mod||'';const look=(item:Item)=>`${item.rarity}:${item.affixes.map(a=>a.id).sort().join(',')}`;p.weaponLook=look(d.inventory.equipment.weapon);p.armorLook=look(d.inventory.equipment.armor);
  }
 }
