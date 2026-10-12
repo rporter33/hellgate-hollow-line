@@ -1,0 +1,42 @@
+{
+  "name": "hellgate-hollow-line",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "tsx watch apps/server/src/index.ts",
+    "dev:client": "vite --config apps/client/vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx tests/simulation.test.ts",
+    "test:rooms": "node --import tsx tests/rooms.test.ts",
+    "test:browser": "python tests/browser.py",
+    "build": "npm run typecheck && vite build --config apps/client/vite.config.ts && esbuild apps/server/src/index.ts --bundle --platform=node --format=esm --packages=external --outfile=apps/server/dist/index.js",
+    "start:server": "node apps/server/dist/index.js",
+    "test:full": "node --import tsx tests/full-rooms.ts"
+  },
+  "dependencies": {
+    "@colyseus/core": "0.16.24",
+    "@colyseus/schema": "3.0.69",
+    "@colyseus/ws-transport": "0.16.5",
+    "colyseus.js": "0.16.22",
+    "three": "0.180.0",
+    "express": "4.21.2",
+    "cors": "2.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "@types/express": "4.17.23",
+    "@types/cors": "2.8.19",
+    "@types/three": "0.180.0",
+    "typescript": "5.9.3",
+    "tsx": "4.20.6",
+    "vite": "7.1.12",
+    "esbuild": "0.25.11",
+    "ws": "8.18.3"
+  }
+}

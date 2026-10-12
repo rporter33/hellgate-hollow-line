@@ -1,0 +1,989 @@
+{
+  "schemaVersion": 1,
+  "status": "planning_only_not_implemented",
+  "preparedAt": "2026-10-11",
+  "workingTitle": "Hellgate: London — The Hollow Line",
+  "gameId": "hellgate-hollow-line",
+  "builder": "Sol 6.1",
+  "confirmedRequirements": [
+    "direct Hellgate: London fan sequel",
+    "voxel-based browser vertical slice",
+    "distinctive classes, action, enemies and loot",
+    "plan and implementation handoff in this phase",
+    "support up to three players"
+  ],
+  "assumptions": [
+    "online co-op in separate desktop browsers",
+    "solo requires the same game server",
+    "all balance and performance numbers are provisional targets"
+  ],
+  "sourceOfTruth": {
+    "behavior": "DESIGN.md",
+    "implementation": "BUILD_HANDOFF.md",
+    "releaseGates": "ACCEPTANCE.md",
+    "thisFile": "baseline content IDs, counts, tuning and contracts; not executable game content"
+  },
+  "scope": {
+    "minPlayers": 1,
+    "maxPlayers": 3,
+    "playableClassCount": 3,
+    "regularEnemyCount": 4,
+    "eliteModifierCount": 2,
+    "bossCount": 1,
+    "bossPhaseCount": 2,
+    "legendaryRelicCount": 6,
+    "weaponModCount": 3,
+    "affixCount": 6,
+    "optionalBranchCount": 1,
+    "mainRouteMinutes": [
+      10,
+      12
+    ],
+    "withOptionalBranchMinutes": [
+      11,
+      14
+    ],
+    "bossSeconds": [
+      90,
+      150
+    ],
+    "offlinePlay": false
+  },
+  "stack": {
+    "client": [
+      "TypeScript",
+      "Vite",
+      "Three.js",
+      "WebGL 2",
+      "HTML/CSS"
+    ],
+    "server": [
+      "Node.js",
+      "Colyseus",
+      "secure WebSockets"
+    ],
+    "clientHost": "GitHub Pages",
+    "serverHost": "Render Node web service or existing compatible authorized host",
+    "clientHostAlternative": "Sites with the same Node backend",
+    "dataStore": "in-memory room state plus client local completion records",
+    "multiProcess": false
+  },
+  "network": {
+    "serverSimulationHz": 30,
+    "clientMovementPredictionHz": 30,
+    "inputHz": 30,
+    "statePatchHz": 20,
+    "remoteInterpolationMs": 100,
+    "maxGameplayMessageBytes": 2048,
+    "maxGameplayMessagesPerClientPerSecond": 60,
+    "maxRooms": 5,
+    "roomCodeLength": 6,
+    "reconnectGraceSeconds": 60,
+    "freshJoinDuringExpedition": false,
+    "duplicateClassesAllowed": true,
+    "predictDamage": false,
+    "predictMovement": true,
+    "serverAuthoritative": true,
+    "lagCompensation": "no full rollback or hitscan rewind in slice",
+    "targetRttMs": 100,
+    "stressRttMs": 150,
+    "targetJitterMs": 30,
+    "testPacketLossFraction": 0.01,
+    "downstreamTargetBytesPerSecond": 61440,
+    "upstreamTargetBytesPerSecond": 8192,
+    "requiredHandshake": [
+      "protocolVersion",
+      "contentVersion"
+    ],
+    "inputFields": [
+      "sequence",
+      "runStateRevision",
+      "moveAxes",
+      "aimYaw",
+      "aimPitch",
+      "heldActions",
+      "actionEdges"
+    ],
+    "clientMayNotSet": [
+      "position",
+      "damage",
+      "health",
+      "cooldowns",
+      "lootStats",
+      "rewardOwnership"
+    ],
+    "worldSync": [
+      "removedVoxelGroupIds",
+      "worldRevision",
+      "bossPhase",
+      "rewardFlags"
+    ],
+    "serverRestartPolicy": "end unfinished sessions cleanly; no durable recovery"
+  },
+  "controls": {
+    "move": "WASD",
+    "aim": "mouse",
+    "primary": "MouseLeft",
+    "secondary": "MouseRight",
+    "signature": "Q",
+    "dodge": "Space",
+    "interactOrRevive": "E",
+    "reload": "R",
+    "medkit": "H",
+    "inventory": "I",
+    "menu": "Escape",
+    "ping": "MouseMiddle"
+  },
+  "camera": {
+    "type": "third_person_shoulder",
+    "distanceMetres": 4.5,
+    "heightMetres": 2.2,
+    "verticalFovDegrees": 75,
+    "verticalFovRange": [
+      70,
+      90
+    ],
+    "collision": true
+  },
+  "combat": {
+    "moveSpeedMetresPerSecond": 5,
+    "dodge": {
+      "distanceMetres": 3.2,
+      "durationSeconds": 0.3,
+      "invulnerabilitySeconds": 0.18,
+      "cooldownSeconds": 2
+    },
+    "medkits": {
+      "maximumCharges": 2,
+      "healMaxHealthFraction": 0.45,
+      "useCooldownSeconds": 1
+    },
+    "weakPointMultiplier": 1.5,
+    "armorFormula": "100 / (100 + armor)",
+    "randomCrits": false,
+    "friendlyFire": false,
+    "teammateCollision": false,
+    "procRecursion": false,
+    "actionsMutuallyExclusive": true,
+    "dodgeCancelsActions": true
+  },
+  "classes": [
+    {
+      "id": "blademaster",
+      "faction": "templar",
+      "startingHealth": 130,
+      "startingTotalArmor": 20,
+      "weaponBaseId": "twin_blades",
+      "resource": {
+        "id": "zeal",
+        "max": 100,
+        "start": 0,
+        "onPrimarySwingHit": 10,
+        "onLungeHit": 15,
+        "decayDelaySeconds": 4,
+        "decayPerSecond": 10
+      },
+      "abilities": [
+        {
+          "id": "twin_cut",
+          "slot": "primary",
+          "damageSequence": [
+            30,
+            30,
+            45
+          ],
+          "intervalSeconds": 0.35,
+          "rangeMetres": 2.4,
+          "arcDegrees": 110,
+          "comboResetSeconds": 1,
+          "maxResourceAwardsPerAttack": 1
+        },
+        {
+          "id": "whirlwind",
+          "slot": "secondary",
+          "damage": 65,
+          "radiusMetres": 3,
+          "resourceCost": 40,
+          "actionSeconds": 0.65,
+          "cooldownSeconds": 1,
+          "movementMultiplier": 0.5,
+          "guardHit": true
+        },
+        {
+          "id": "lunge",
+          "slot": "signature",
+          "damage": 45,
+          "distanceMetres": 6,
+          "durationSeconds": 0.25,
+          "cooldownSeconds": 5,
+          "invulnerable": false,
+          "guardHit": true
+        }
+      ]
+    },
+    {
+      "id": "marksman",
+      "faction": "hunter",
+      "startingHealth": 110,
+      "startingTotalArmor": 10,
+      "weaponBaseId": "pulse_rifle",
+      "resource": {
+        "id": "ammo",
+        "magazine": 24,
+        "infiniteReserve": true,
+        "reloadSeconds": 1.2
+      },
+      "abilities": [
+        {
+          "id": "pulse_rifle",
+          "slot": "primary",
+          "damage": 18,
+          "roundsPerSecond": 5,
+          "ammoCost": 1,
+          "rangeMetres": 30,
+          "hitType": "hitscan"
+        },
+        {
+          "id": "execution_round",
+          "slot": "secondary",
+          "damage": 80,
+          "chargeSeconds": 0.6,
+          "ammoCost": 4,
+          "movementMultiplier": 0.6,
+          "rangeMetres": 30,
+          "releaseToFire": true,
+          "earlyReleaseCancels": true,
+          "guardHit": true
+        },
+        {
+          "id": "breach_grenade",
+          "slot": "signature",
+          "damage": 75,
+          "radiusMetres": 3,
+          "fuseSeconds": 0.7,
+          "cooldownSeconds": 8,
+          "guardHit": true
+        }
+      ]
+    },
+    {
+      "id": "evoker",
+      "faction": "cabalist",
+      "startingHealth": 95,
+      "startingTotalArmor": 5,
+      "weaponBaseId": "ember_focus",
+      "resource": {
+        "id": "focus",
+        "max": 100,
+        "start": 100,
+        "regenerationPerSecond": 15,
+        "regenerationDuringArcLash": false
+      },
+      "abilities": [
+        {
+          "id": "ember_focus",
+          "slot": "primary",
+          "damage": 24,
+          "shotsPerSecond": 3,
+          "speedMetresPerSecond": 24,
+          "rangeMetres": 24,
+          "resourceCost": 0,
+          "guardHit": true
+        },
+        {
+          "id": "arc_lash",
+          "slot": "secondary",
+          "ticksPerSecond": 4,
+          "damagePerPrimaryTick": 16,
+          "chainDamagePerTick": 8,
+          "maxAdditionalTargets": 2,
+          "rangeMetres": 12,
+          "chainRangeMetres": 5,
+          "resourceCostPerSecond": 20,
+          "requiresLineOfSight": true,
+          "guardHitMaximumPerSecond": 1
+        },
+        {
+          "id": "gravity_well",
+          "slot": "signature",
+          "damage": 0,
+          "rangeMetres": 16,
+          "radiusMetres": 4,
+          "durationSeconds": 3,
+          "cooldownSeconds": 8,
+          "resourceCost": 40,
+          "pullMetresPerSecond": 2,
+          "bulwarkPullMultiplier": 0.35,
+          "bossPullMultiplier": 0,
+          "stackingPull": false
+        }
+      ]
+    }
+  ],
+  "deferredClasses": [
+    "guardian",
+    "engineer",
+    "summoner"
+  ],
+  "enemies": [
+    {
+      "id": "carrion_runner",
+      "health": 40,
+      "armor": 0,
+      "damage": 12,
+      "tellSeconds": 0.55,
+      "recoverySeconds": 0.8,
+      "role": "rush_and_pounce"
+    },
+    {
+      "id": "riftspitter",
+      "health": 100,
+      "armor": 0,
+      "damage": 18,
+      "tellSeconds": 0.8,
+      "recoverySeconds": 1.5,
+      "projectileSpeedMetresPerSecond": 10,
+      "role": "ranged_pressure"
+    },
+    {
+      "id": "ironbound_bulwark",
+      "health": 240,
+      "armor": 25,
+      "damage": 30,
+      "tellSeconds": 1,
+      "recoverySeconds": 1.2,
+      "frontConeDegrees": 120,
+      "frontalDamageReduction": 0.5,
+      "guardHitsRequired": 3,
+      "guardHitWindowSeconds": 4,
+      "guardBreakSeconds": 4,
+      "role": "frontline_obstacle"
+    },
+    {
+      "id": "breach_cantor",
+      "health": 120,
+      "armor": 5,
+      "damage": 16,
+      "tellSeconds": 1.2,
+      "attackCycleSeconds": 4,
+      "auraRadiusMetres": 6,
+      "auraDamageReduction": 0.3,
+      "auraNeedsLineOfSight": true,
+      "auraStacks": false,
+      "auraProtectsSelfOrBoss": false,
+      "role": "priority_support"
+    }
+  ],
+  "eliteModifiers": [
+    {
+      "id": "frenzied",
+      "healthMultiplier": 1.3,
+      "movementMultiplier": 1.2,
+      "tellSpeedMultiplier": 1
+    },
+    {
+      "id": "volatile",
+      "healthMultiplier": 1.3,
+      "deathExplosionDamage": 25,
+      "deathExplosionRadiusMetres": 3,
+      "deathExplosionDelaySeconds": 1
+    }
+  ],
+  "boss": {
+    "id": "bellwether",
+    "health": 3800,
+    "armor": 0,
+    "weakPointMultiplier": 1.5,
+    "heightMetres": 4,
+    "phase2HealthFraction": 0.5,
+    "phaseTransitionSeconds": 2,
+    "postAddSpawnGraceSeconds": 2,
+    "plateCount": 2,
+    "plateHealthEach": 150,
+    "plateDamageTransfers": false,
+    "sweep": {
+      "damage": 35,
+      "rangeMetres": 5,
+      "tellSeconds": 1,
+      "recoverySeconds": 1.4
+    },
+    "ring": {
+      "damage": 25,
+      "tellSeconds": 1.2,
+      "recoverySeconds": 1.4,
+      "hitsPerExpansionPerPlayer": 1,
+      "ignoresCover": true
+    },
+    "groundStrike": {
+      "count": 3,
+      "damage": 25,
+      "tellSeconds": 1,
+      "replacesEveryNthAttackInPhase2": 3,
+      "overlapCanMultiHit": false
+    },
+    "phase2AddsSpawnOnce": true
+  },
+  "partyScaling": {
+    "1": {
+      "normalHealth": 1,
+      "bossAndPlateHealth": 1,
+      "enemyDamage": 1,
+      "extraRunnersPerWave": 0,
+      "simultaneousWindups": 3,
+      "bossTransitionAdds": 4
+    },
+    "2": {
+      "normalHealth": 1.65,
+      "bossAndPlateHealth": 1.8,
+      "enemyDamage": 1.1,
+      "extraRunnersPerWave": 1,
+      "simultaneousWindups": 4,
+      "bossTransitionAdds": 5
+    },
+    "3": {
+      "normalHealth": 2.3,
+      "bossAndPlateHealth": 2.6,
+      "enemyDamage": 1.2,
+      "extraRunnersPerWave": 2,
+      "simultaneousWindups": 5,
+      "bossTransitionAdds": 6
+    }
+  },
+  "coop": {
+    "friendlyDamage": false,
+    "partySizeFrozenPerEncounter": true,
+    "downedSeconds": 20,
+    "reviveSeconds": 3,
+    "reviveRangeMetres": 2.5,
+    "reviverMovementInterruptMetres": 0.5,
+    "reviveHealthFraction": 0.4,
+    "reviveInvulnerabilitySeconds": 1,
+    "wipeDelaySeconds": 3,
+    "regroupCountdownSeconds": 10,
+    "pingLifetimeSeconds": 3,
+    "pingCooldownSeconds": 1,
+    "personalLoot": true,
+    "trading": false,
+    "soloMenuPauses": true,
+    "coopMenuPauses": false,
+    "disconnectedAvatarVulnerable": true,
+    "allDisconnectedRoomFreezes": true,
+    "leaderIsSimulationHost": false,
+    "classChangeDuringExpedition": false,
+    "leaderTransfer": "longest-connected remaining player",
+    "checkpointLocation": "each encounter entry",
+    "checkpointRetry": "restore party snapshots and reward flags; full health and two medkits; recalculate party scaling"
+  },
+  "loot": {
+    "equipmentSlots": [
+      "weapon",
+      "armor",
+      "relic"
+    ],
+    "backpackCapacity": 12,
+    "weaponSocketCount": 1,
+    "rarities": [
+      "common",
+      "magic",
+      "rare",
+      "legendary"
+    ],
+    "ordinaryEquipmentSlotWeights": {
+      "weapon": 0.6,
+      "armor": 0.4
+    },
+    "ordinaryEquipmentRarityWeights": {
+      "magic": 0.65,
+      "rare": 0.35
+    },
+    "ordinaryEnemyDropChancePerPlayer": 0.08,
+    "randomEquipmentCapPerPlayer": 4,
+    "eliteReward": "one guaranteed Rare per player, outside random cap",
+    "bossAddsDrop": false,
+    "randomLegendaries": false,
+    "weaponCompatibility": "chosen class only",
+    "mandatoryRewardsPersonal": true,
+    "legendaryRelics": [
+      {
+        "id": "red_wake",
+        "name": "Red Wake",
+        "classId": "blademaster",
+        "abilityId": "lunge",
+        "effect": "damage_trail",
+        "params": {
+          "widthMetres": 1,
+          "durationSeconds": 2,
+          "damage": 45,
+          "maxHitsPerTargetPerTrail": 1
+        }
+      },
+      {
+        "id": "martyrs_engine",
+        "name": "Martyr's Engine",
+        "classId": "blademaster",
+        "abilityId": "whirlwind",
+        "effect": "consume_all_zeal",
+        "params": {
+          "minimumZeal": 40,
+          "damagePerExtraZeal": 0.8,
+          "radiusMetresPerExtraZeal": 0.015
+        }
+      },
+      {
+        "id": "ricochet_testament",
+        "name": "Ricochet Testament",
+        "classId": "marksman",
+        "abilityId": "pulse_rifle",
+        "effect": "single_bounce",
+        "params": {
+          "damageMultiplier": 0.6,
+          "rangeMetres": 6,
+          "maxBounces": 1,
+          "requiresLineOfSight": true,
+          "canProc": false,
+          "inheritsSourceWeakPointBonus": false
+        }
+      },
+      {
+        "id": "long_watch",
+        "name": "Long Watch",
+        "classId": "marksman",
+        "abilityId": "execution_round",
+        "effect": "piercing_precision",
+        "params": {
+          "maxEnemyHits": 3,
+          "weakPointMultiplier": 2,
+          "coverStops": true
+        }
+      },
+      {
+        "id": "cinder_choir",
+        "name": "Cinder Choir",
+        "classId": "evoker",
+        "abilityId": "ember_focus",
+        "effect": "three_bolt_fan",
+        "params": {
+          "anglesDegrees": [
+            -8,
+            0,
+            8
+          ],
+          "damageMultiplierPerBolt": 0.5,
+          "eachBoltCanHitSameTargetOnce": true
+        }
+      },
+      {
+        "id": "event_horizon",
+        "name": "Event Horizon",
+        "classId": "evoker",
+        "abilityId": "gravity_well",
+        "effect": "delayed_detonation",
+        "params": {
+          "durationSeconds": 4,
+          "damage": 90,
+          "radiusMetres": 4,
+          "requiresLineOfSight": true
+        }
+      }
+    ],
+    "weaponMods": [
+      {
+        "id": "arc_coil",
+        "name": "Arc Coil",
+        "effect": "every_fifth_successful_primary_attack",
+        "params": {
+          "damage": 12,
+          "additionalTargets": 1,
+          "rangeMetres": 5,
+          "requiresLineOfSight": true,
+          "countPerAttackNotPerHit": true
+        }
+      },
+      {
+        "id": "blood_seal",
+        "name": "Blood Seal",
+        "effect": "heal_on_direct_primary_kill",
+        "params": {
+          "health": 4
+        }
+      },
+      {
+        "id": "breach_core",
+        "name": "Breach Core",
+        "effect": "destructible_and_boss_plate_damage",
+        "params": {
+          "multiplier": 1.5
+        }
+      }
+    ],
+    "affixes": [
+      {
+        "id": "savage",
+        "slots": [
+          "weapon"
+        ],
+        "stat": "weaponDamageFraction",
+        "range": [
+          0.08,
+          0.15
+        ]
+      },
+      {
+        "id": "rapid",
+        "slots": [
+          "weapon"
+        ],
+        "stat": "primaryAttackRateFraction",
+        "range": [
+          0.05,
+          0.1
+        ]
+      },
+      {
+        "id": "resolute",
+        "slots": [
+          "armor"
+        ],
+        "stat": "maximumHealthFlat",
+        "range": [
+          15,
+          25
+        ]
+      },
+      {
+        "id": "plated",
+        "slots": [
+          "armor"
+        ],
+        "stat": "armorFlat",
+        "range": [
+          8,
+          15
+        ]
+      },
+      {
+        "id": "fleet",
+        "slots": [
+          "weapon",
+          "armor"
+        ],
+        "stat": "movementSpeedFraction",
+        "range": [
+          0.04,
+          0.08
+        ]
+      },
+      {
+        "id": "focused",
+        "slots": [
+          "weapon",
+          "armor"
+        ],
+        "stat": "signatureCooldownReductionFraction",
+        "range": [
+          0.05,
+          0.1
+        ]
+      }
+    ],
+    "statCaps": {
+      "movementSpeedIncreaseFraction": 0.2,
+      "cooldownReductionFraction": 0.25
+    },
+    "healthOnEquipmentChange": "preserve current absolute health; clamp if maximum decreases",
+    "weaponBaseValuesVaryByItemLevel": false,
+    "unclaimedRelicAtExtraction": "grant both compatible relics exactly once"
+  },
+  "encounters": [
+    {
+      "id": "strand",
+      "optional": false,
+      "waves": [
+        {
+          "carrion_runner": 4
+        },
+        {
+          "carrion_runner": 4,
+          "riftspitter": 2
+        }
+      ],
+      "rewardIds": [
+        "strand_magic_weapon"
+      ],
+      "eliteAllowed": false
+    },
+    {
+      "id": "concourse",
+      "optional": false,
+      "waves": [
+        {
+          "carrion_runner": 3,
+          "riftspitter": 2,
+          "ironbound_bulwark": 1
+        },
+        {
+          "carrion_runner": 2,
+          "ironbound_bulwark": 1
+        }
+      ],
+      "rewardIds": [
+        "concourse_rare_weapon",
+        "concourse_relic_choice"
+      ],
+      "eliteAllowed": false
+    },
+    {
+      "id": "maintenance_crypt",
+      "optional": true,
+      "waves": [
+        {
+          "carrion_runner": 3,
+          "riftspitter": 2,
+          "ironbound_bulwark": 1
+        }
+      ],
+      "rewardIds": [
+        "crypt_mod_choice"
+      ],
+      "eliteAllowed": true,
+      "guaranteedEliteEnemyId": "ironbound_bulwark"
+    },
+    {
+      "id": "signal_chamber",
+      "optional": false,
+      "waves": [
+        {
+          "carrion_runner": 3,
+          "riftspitter": 2,
+          "ironbound_bulwark": 1,
+          "breach_cantor": 1
+        },
+        {
+          "carrion_runner": 3,
+          "riftspitter": 2,
+          "breach_cantor": 1
+        }
+      ],
+      "rewardIds": [
+        "signal_random_mod",
+        "pre_boss_resupply"
+      ],
+      "eliteAllowed": true
+    },
+    {
+      "id": "aldwych_platform",
+      "optional": false,
+      "bossId": "bellwether",
+      "waves": [],
+      "rewardIds": [
+        "boss_rare_equipment",
+        "boss_unchosen_relic"
+      ],
+      "eliteAllowed": false
+    }
+  ],
+  "seedVariationRules": {
+    "criticalLayoutFixed": true,
+    "openingWaveFixed": true,
+    "laterWaves": "approved Runner/Spitter swaps only, preserving introduced archetypes and active cap",
+    "eliteMaximumPerEncounter": 1,
+    "modifiersPerElite": 1,
+    "visualRngSeparate": true,
+    "lootStreamPerPlayer": true
+  },
+  "rewards": [
+    {
+      "id": "strand_magic_weapon",
+      "kind": "weapon",
+      "rarity": "magic",
+      "guaranteed": true
+    },
+    {
+      "id": "concourse_rare_weapon",
+      "kind": "weapon",
+      "rarity": "rare",
+      "guaranteed": true
+    },
+    {
+      "id": "concourse_relic_choice",
+      "kind": "relic",
+      "rarity": "legendary",
+      "choice": "two class-compatible relics",
+      "guaranteed": true,
+      "autoEquipChosen": true
+    },
+    {
+      "id": "crypt_mod_choice",
+      "kind": "mod",
+      "choice": "all three mods",
+      "guaranteed": true
+    },
+    {
+      "id": "signal_random_mod",
+      "kind": "mod",
+      "selection": "uniform random",
+      "guaranteed": true
+    },
+    {
+      "id": "pre_boss_resupply",
+      "kind": "resupply",
+      "restore": [
+        "health",
+        "class resource or ammo",
+        "two medkits"
+      ],
+      "guaranteed": true
+    },
+    {
+      "id": "boss_rare_equipment",
+      "kind": "ordinary_equipment",
+      "rarity": "rare",
+      "guaranteed": true
+    },
+    {
+      "id": "boss_unchosen_relic",
+      "kind": "relic",
+      "rarity": "legendary",
+      "selection": "class relic not chosen at Concourse",
+      "guaranteed": true
+    }
+  ],
+  "world": {
+    "terrainVoxelMetres": 0.5,
+    "actorVoxelApproxMetres": 0.125,
+    "footprintMetres": [
+      96,
+      64
+    ],
+    "arenaWidthMetres": [
+      14,
+      22
+    ],
+    "bossArenaMetres": [
+      24,
+      24
+    ],
+    "breakableGroupHealth": 60,
+    "arbitraryDigging": false,
+    "geometry": "merged visible voxel surfaces",
+    "requiredDestruction": [
+      "street barricade",
+      "optional crypt wall",
+      "boss shoulder plates"
+    ],
+    "navigation": "zone-local grids plus ramps and doorway connections",
+    "floorsAndBoundariesDestructible": false
+  },
+  "performance": {
+    "activeEnemyCapIncludingBoss": 12,
+    "gameplayProjectileCap": 96,
+    "cosmeticParticleCap": 240,
+    "debrisCap": 80,
+    "lowDrawCallTarget": 150,
+    "lowVisibleTriangleTarget": 250000,
+    "initialCompressedBytesMax": 12582912,
+    "coldClientInteractiveSeconds": 8,
+    "coldClientBandwidthMbps": 20,
+    "coldClientLatencyMs": 100,
+    "low": {
+      "resolution": [
+        1280,
+        720
+      ],
+      "pixelRatioCap": 1,
+      "medianFpsMin": 30,
+      "p95FrameMsMax": 40,
+      "reference": "Iris Xe class iGPU, 16 GB RAM"
+    },
+    "standard": {
+      "resolution": [
+        1920,
+        1080
+      ],
+      "pixelRatioCap": 1.5,
+      "medianFpsMin": 60,
+      "p95FrameMsMax": 25,
+      "reference": "Apple M1 class or equivalent"
+    },
+    "stressEncounterSeconds": 60,
+    "serverCombinedP95SimulationMsMaxAtFiveRooms": 20,
+    "restartCycles": 10
+  },
+  "persistence": {
+    "clientLocal": [
+      "settings",
+      "class wins",
+      "best time by party size",
+      "relic discoveries from completed runs"
+    ],
+    "sessionStorage": [
+      "reconnection token"
+    ],
+    "serverMemory": [
+      "live rooms",
+      "gear",
+      "encounter checkpoint"
+    ],
+    "durableCharacters": false,
+    "durableUnfinishedRuns": false
+  },
+  "milestoneIds": [
+    "M0",
+    "M1",
+    "M2",
+    "M3",
+    "M4",
+    "M5"
+  ],
+  "releaseGateIds": [
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R10",
+    "R11",
+    "R12"
+  ],
+  "testIds": [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T09",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14",
+    "T15",
+    "T16"
+  ],
+  "excluded": [
+    "more than three players",
+    "local split-screen",
+    "public matchmaking",
+    "fresh joins mid-expedition",
+    "PvP",
+    "offline mode",
+    "full six-class launch",
+    "open world",
+    "procedural dungeon topology",
+    "skill trees",
+    "crafting and trading economy",
+    "mobile and controller support",
+    "first-person camera",
+    "arbitrary voxel editing",
+    "persistent online characters",
+    "cross-server recovery",
+    "cinematics and voice acting"
+  ]
+}

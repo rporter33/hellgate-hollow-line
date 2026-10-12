@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: hellgate-hollow-line
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:server
+    healthCheckPath: /health
+    numInstances: 1
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: PORT
+        value: 10000
+      - key: MAX_ROOMS
+        value: 5
+      - key: VITE_BASE
+        value: /
+      - key: ALLOWED_ORIGINS
+        value: https://rporter33.github.io

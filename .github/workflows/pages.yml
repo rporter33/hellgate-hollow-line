@@ -1,0 +1,48 @@
+name: Publish client after backend verification
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: Matching deployed HTTPS Node server origin
+        required: true
+        type: string
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck && npm test && npm run test:rooms && npm run test:full
+      - name: Verify matching backend and configure client
+        env:
+          HOLLOW_BACKEND: ${{ inputs.backend }}
+        run: node scripts/verify-backend.mjs "$HOLLOW_BACKEND"
+      - run: npm run build
+        env:
+          VITE_BASE: /hellgate-hollow-line/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/client/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
