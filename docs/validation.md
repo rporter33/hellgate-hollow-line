@@ -13,7 +13,7 @@ Build: protocol `hollow-1`, content `2026.10.12-1`. Node 24.19.0, Linux cloud ex
 
 ## Current rechecks
 
-Boss base health increased from the handoff's 3,800 to 8,400 after measured fights were too short. The first longer network runs exposed inadequate bot evasion of expanding rings and ground markers. Bot and companion steering now crosses rings toward their source and leaves fixed strike markers; full real-network completions are being rerun. Passing initial-tuning runs are not claimed as a pass for the new tuning.
+Boss base health increased from the handoff's 3,800 to 8,400 after measured fights were too short. The first longer network runs exposed inadequate bot evasion of expanding rings and ground markers. Bot and companion steering now crosses rings toward their source and finds a lane clear of all overlapping strike markers. At the longer boss tuning, Marksman, Evoker, two-player and mixed three-player network completions passed. Blademaster initially failed and then completed in 154 seconds after widening dodge invulnerability to 0.25s and using an earlier latency-aware dodge intent. A final all-roster run with this last shared tuning remains due. One Colyseus `refId not found` decoder warning occurred at the end of that successful Blademaster run; final state was correct in the test, but this warning needs investigation before release.
 
 The user requested taller proportions and an original-Hellgate art-direction pass. Reference study and visual clarification are in progress. The prior browser result does not certify the yet-to-be-rebuilt figures. Ten browser room/rig restart cycles passed with exactly 11 live geometries and one texture on every cycle. No page errors were observed.
 
@@ -22,7 +22,7 @@ The user requested taller proportions and an original-Hellgate art-direction pas
 | Gate | Status |
 | --- | --- |
 | R01 load / capability / recovery | Passed locally; hosted load pending |
-| R02 solo every class | Simulation passed; initial-tuning WebSocket runs passed; final-tuning rerun pending |
+| R02 solo every class | Simulation passed; initial-tuning WebSocket runs passed; final all-roster rerun and decoder-warning investigation pending |
 | R03 two/three clients | Initial-tuning local network runs passed; final rerun pending; separate-machine hosted runs unverified |
 | R04 three class identities | Rules and resource use verified; human feel unverified |
 | R05 relics / mods | Behavior invariants verified; all visual effects need final art-pass observation |
