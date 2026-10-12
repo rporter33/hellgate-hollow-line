@@ -3,6 +3,9 @@ type Cell={x:number;y:number;z:number;color:number};
 export class Voxels {
  cells=new Map<string,Cell>();
  box(x:number,y:number,z:number,w:number,h:number,d:number,color:number){for(let ix=x;ix<x+w;ix++)for(let iy=y;iy<y+h;iy++)for(let iz=z;iz<z+d;iz++)this.cells.set(`${ix},${iy},${iz}`,{x:ix,y:iy,z:iz,color});return this;}
+ ellipsoid(cx:number,cy:number,cz:number,rx:number,ry:number,rz:number,color:number){
+  for(let x=Math.floor(cx-rx);x<Math.ceil(cx+rx);x++)for(let y=Math.floor(cy-ry);y<Math.ceil(cy+ry);y++)for(let z=Math.floor(cz-rz);z<Math.ceil(cz+rz);z++)if(((x+.5-cx)/rx)**2+((y+.5-cy)/ry)**2+((z+.5-cz)/rz)**2<=1)this.box(x,y,z,1,1,1,color);return this;
+ }
  erase(x:number,y:number,z:number,w:number,h:number,d:number){for(let ix=x;ix<x+w;ix++)for(let iy=y;iy<y+h;iy++)for(let iz=z;iz<z+d;iz++)this.cells.delete(`${ix},${iy},${iz}`);return this;}
  mesh(scale=.5){
   const positions:number[]=[],normals:number[]=[],colors:number[]=[];

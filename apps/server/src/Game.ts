@@ -1,5 +1,5 @@
 import {ActorState,EffectState,WorldState} from '../../../packages/shared/src/schema';
-import {CLASSES,ENEMIES,SCALING,ZONES,obstacles,obstacleById,RELICS,MODS,AFFIXES,type ClassId,type EnemyId,type Item,type PrivateState,type Box} from '../../../packages/shared/src/content';
+import {CLASSES,ARMOR_SLOTS,ARMOR_SHARE,ARMOR_NAMES,isArmorSlot,type ArmorSlot,ENEMIES,SCALING,ZONES,obstacles,obstacleById,RELICS,MODS,AFFIXES,type ClassId,type EnemyId,type Item,type PrivateState,type Box} from '../../../packages/shared/src/content';
 import {unsupportedBlocks} from '../../../packages/shared/src/architecture';
 import {idleInput,parseInput,type Input} from '../../../packages/shared/src/protocol';
 import {move,distance,obstruction,rayBox,rayBox3,rayCandidates,sphereBox,walkBlocking,angleDiff,clamp,rng,hash,segmentDistance} from '../../../packages/shared/src/math';
@@ -26,7 +26,8 @@ export class Game {
  removePlayer(id:string){this.s.players.delete(id);this.pd.delete(id);}
  resetPlayer(p:ActorState,fresh=false){
   const c=CLASSES[p.classId as ClassId];let inv=this.pd.get(p.id)?.inventory;
-  if(fresh||!inv){inv={bag:[],equipment:{weapon:{id:this.id('item'),base:p.classId,name:c.weapon,slot:'weapon',rarity:'common',classId:p.classId as ClassId,affixes:[]},armor:{id:this.id('item'),base:'faction_armor',name:`${c.faction} armor`,slot:'armor',rarity:'common',classId:p.classId as ClassId,affixes:[]}},drops:[],rewards:[],chosenRelic:'',randomDrops:0};}
+  const starterArmor=(slot:ArmorSlot):Item=>({id:this.id('item'),base:`faction_${slot}`,name:`${c.faction} ${ARMOR_NAMES[slot]}`,slot,rarity:'common',classId:p.classId as ClassId,affixes:[]});
+  if(fresh||!inv){inv={bag:[],equipment:{weapon:{id:this.id('item'),base:p.classId,name:c.weapon,slot:'weapon',rarity:'common',classId:p.classId as ClassId,affixes:[]},helmet:starterArmor('helmet'),chest:starterArmor('chest'),arms:starterArmor('arms'),legs:starterArmor('legs')},drops:[],rewards:[],chosenRelic:'',randomDrops:0};}
   this.pd.set(p.id,{input:idleInput(),inputAt:this.s.time,inventory:inv,roll:0,nextAttack:0,nextSecondary:0,lastHit:0,lastPrimary:0,combo:0,invUntil:0,dashUntil:0,dx:0,dz:0,charge:0,secondaryWas:false,arcCount:0,arcAttacks:new Set(),reviveTarget:'',reviveStart:0,reviveX:0,reviveZ:0,lastDamage:0,pingAt:0,medkitAt:0,stats:{damage:1,rate:1,speed:1,cooldown:1,hp:c.hp,armor:c.armor}});
   this.updateStats(p);p.hp=p.maxHp;p.resource=p.classId==='evoker'?100:0;p.ammo=24;p.medkits=2;p.status='standing';p.action='idle';p.signature=p.dodge=p.actionEnd=p.downEnd=p.revive=0;this.private(p.id);
  }
@@ -67,7 +68,7 @@ export class Game {
  }
  clearEncounter(){this.s.cleared=true;this.nextWave=0;this.s.message='Breach cleared · recover your cache';
   for(const p of this.s.players.values()){if(p.status!=='standing'){p.status='standing';p.hp=p.maxHp*.4;p.z=-ZONES[this.s.stage].depth/2+4;}
-   const inv=this.pd.get(p.id)!.inventory;if(this.s.stage===1&&!inv.rewards.includes('strand_weapon')){this.give(p,this.rollItem(p,'weapon','magic'));inv.rewards.push('strand_weapon');this.private(p.id);}
+   const inv=this.pd.get(p.id)!.inventory;if(this.s.stage===1&&!inv.rewards.includes('strand_weapon')){this.give(p,this.rollItem(p,'weapon','magic'));this.give(p,this.rollItem(p,'helmet','magic'));inv.rewards.push('strand_weapon');this.private(p.id);}
    if(this.s.stage===2&&!inv.rewards.includes('concourse_weapon')){this.give(p,this.rollItem(p,'weapon','rare'));inv.rewards.push('concourse_weapon','relic_choice');this.private(p.id);}
    if(this.s.stage===3&&!inv.rewards.includes('crypt_mod_choice')){inv.rewards.push('crypt_mod_choice');this.private(p.id);this.cryptDone=true;}
    if(this.s.stage===4&&!inv.rewards.includes('signal_mod')){this.give(p,this.modItem(MODS[Math.floor(this.random(p)*3)].id));inv.rewards.push('signal_mod');p.hp=p.maxHp;p.medkits=2;p.ammo=24;p.resource=p.classId==='marksman'?0:100;p.signature=p.dodge=this.s.time;this.private(p.id);}
@@ -310,9 +311,9 @@ export class Game {
   this.s.phase='play';this.enter(cp.stage);return true;
  }
  random(p:ActorState){const d=this.pd.get(p.id)!;return rng(hash(`${this.s.seed}:${p.id}:${d.roll++}`))();}
- rollItem(p:ActorState,slot?:'weapon'|'armor',rarity?:'magic'|'rare'):Item {slot??=this.random(p)<.6?'weapon':'armor';rarity??=this.random(p)<.65?'magic':'rare';const eligible=Object.entries(AFFIXES).filter(([,a])=>(a.slots as readonly string[]).includes(slot!));const affixes:Item['affixes']=[];
-  for(let i=0;i<(rarity==='rare'?2:1);i++){const [id,a]=eligible.splice(Math.floor(this.random(p)*eligible.length),1)[0];affixes.push({id:id as keyof typeof AFFIXES,value:a.min+(a.max-a.min)*this.random(p)});}
-  const c=CLASSES[p.classId as ClassId];return {id:this.id('item'),base:slot==='weapon'?p.classId:'faction_armor',name:`${affixes.map(a=>AFFIXES[a.id].name).join(' ')} ${slot==='weapon'?c.weapon:c.faction+' armor'}`,slot,rarity,classId:p.classId as ClassId,affixes};
+ rollItem(p:ActorState,slot?:'weapon'|ArmorSlot,rarity?:'magic'|'rare'):Item {slot??=this.random(p)<.6?'weapon':ARMOR_SLOTS[Math.floor(this.random(p)*ARMOR_SLOTS.length)];rarity??=this.random(p)<.65?'magic':'rare';const eligible=Object.entries(AFFIXES).filter(([,a])=>(a.slots as readonly string[]).includes(isArmorSlot(slot!)?'armor':slot!));const affixes:Item['affixes']=[];
+  for(let i=0;i<(rarity==='rare'?2:1);i++){const [id,a]=eligible.splice(Math.floor(this.random(p)*eligible.length),1)[0];affixes.push({id:id as keyof typeof AFFIXES,value:(a.min+(a.max-a.min)*this.random(p))*(isArmorSlot(slot)?ARMOR_SHARE[slot]:1)});}
+  const c=CLASSES[p.classId as ClassId];return {id:this.id('item'),base:slot==='weapon'?p.classId:`faction_${slot}`,name:`${affixes.map(a=>AFFIXES[a.id].name).join(' ')} ${slot==='weapon'?c.weapon:c.faction+' '+ARMOR_NAMES[slot]}`,slot,rarity,classId:p.classId as ClassId,affixes};
  }
  give(p:ActorState,item:Item){const inv=this.pd.get(p.id)!.inventory;if(inv.bag.length<12)inv.bag.push(item);else this.drop(p,item,p.x,p.z);this.private(p.id);}
  drop(p:ActorState,item:Item,x:number,z:number){this.pd.get(p.id)!.inventory.drops.push({id:this.id('drop'),x,z,item});this.private(p.id);}
@@ -340,6 +341,6 @@ export class Game {
   this.private(id);return true;
  }
  updateStats(p:ActorState){const d=this.pd.get(p.id)!,c=CLASSES[p.classId as ClassId],totals:Record<string,number>={damage:0,rate:0,speed:0,cooldown:0,hp:0,armor:0};for(const item of Object.values(d.inventory.equipment))for(const a of item?.affixes||[])totals[AFFIXES[a.id].stat]+=a.value;
-  d.stats={damage:1+totals.damage,rate:1+totals.rate,speed:1+Math.min(.2,totals.speed),cooldown:1-Math.min(.25,totals.cooldown),hp:c.hp+totals.hp,armor:c.armor+totals.armor};p.maxHp=d.stats.hp;p.hp=Math.min(p.hp,p.maxHp);p.relic=d.inventory.equipment.relic?.base||'';p.mod=d.inventory.equipment.weapon.mod||'';const look=(item:Item)=>`${item.rarity}:${item.affixes.map(a=>a.id).sort().join(',')}`;p.weaponLook=look(d.inventory.equipment.weapon);p.armorLook=look(d.inventory.equipment.armor);
+  d.stats={damage:1+totals.damage,rate:1+totals.rate,speed:1+Math.min(.2,totals.speed),cooldown:1-Math.min(.25,totals.cooldown),hp:c.hp+totals.hp,armor:c.armor+totals.armor};p.maxHp=d.stats.hp;p.hp=Math.min(p.hp,p.maxHp);p.relic=d.inventory.equipment.relic?.base||'';p.mod=d.inventory.equipment.weapon.mod||'';const look=(item:Item)=>`${item.rarity}:${item.affixes.map(a=>a.id).sort().join(',')}`;p.weaponLook=look(d.inventory.equipment.weapon);for(const slot of ARMOR_SLOTS)p[`${slot}Look`]=look(d.inventory.equipment[slot]);
  }
 }

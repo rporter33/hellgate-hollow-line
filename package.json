@@ -20,7 +20,8 @@
     "test:full": "node --import tsx tests/full-rooms.ts",
     "test:destruction": "node --import tsx tests/destruction.test.ts",
     "test:serialization": "node --import tsx tests/serialization.test.ts",
-    "verify:local": "node scripts/verify-local.mjs"
+    "verify:local": "node scripts/verify-local.mjs",
+    "test:regressions": "node --import tsx --test tests/equipment.test.ts tests/server-lifecycle.test.ts tests/latency.test.ts tests/weapon-pose.test.ts"
   },
   "dependencies": {
     "@colyseus/core": "0.16.24",

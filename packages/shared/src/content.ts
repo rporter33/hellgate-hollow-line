@@ -1,6 +1,6 @@
 import {buildingBlocks} from './architecture';
-export const PROTOCOL = 'hollow-2';
-export const CONTENT = '2026.10.12-2';
+export const PROTOCOL = 'hollow-3';
+export const CONTENT = '2026.10.12-3';
 export const CLASS_IDS = ['blademaster', 'marksman', 'evoker'] as const;
 export type ClassId = typeof CLASS_IDS[number];
 export const CLASSES = {
@@ -22,7 +22,7 @@ export function obstacles(stage:number):Box[] {let result=obstacleCache.get(stag
 function cover(stage:number):Box[] {
   if(stage===0) return [{id:'training_wall',x:0,z:-4,w:4,d:1,h:2,breakable:true,hp:60}];
   if(stage===1) return [
-    {id:'bus',x:-8,z:-3,w:3,d:9,h:6.5}, {id:'barricade_a',x:-1.7,z:0,w:3,d:1,h:1.6,breakable:true,hp:60},
+    {id:'bus',x:-8,z:-3,w:3,d:9,h:4.4}, {id:'barricade_a',x:-1.7,z:0,w:3,d:1,h:1.6,breakable:true,hp:60},
     {id:'barricade_b',x:1.7,z:0,w:3,d:1,h:1.6,breakable:true,hp:60}, {id:'crate_1',x:7,z:-5,w:2,d:2,h:1.8,breakable:true,hp:60}];
   if(stage===2) return [
     {id:'pillar_a',x:-5,z:-2,w:1.5,d:1.5,h:5,breakable:true,hp:140,material:'stone',power:3}, {id:'pillar_b',x:5,z:-2,w:1.5,d:1.5,h:5,breakable:true,hp:140,material:'stone',power:3},
@@ -61,5 +61,11 @@ export const AFFIXES = {
  resolute:{name:'Resolute',slots:['armor'],min:15,max:25,stat:'hp'},plated:{name:'Plated',slots:['armor'],min:8,max:15,stat:'armor'},
  fleet:{name:'Fleet',slots:['weapon','armor'],min:.04,max:.08,stat:'speed'},focused:{name:'Focused',slots:['weapon','armor'],min:.05,max:.1,stat:'cooldown'}
 } as const;
-export type Item = {id:string;base:string;name:string;slot:'weapon'|'armor'|'relic'|'mod';rarity:'common'|'magic'|'rare'|'legendary';classId?:ClassId;affixes:{id:keyof typeof AFFIXES;value:number}[];mod?:string};
-export type PrivateState = {bag:Item[];equipment:{weapon:Item;armor:Item;relic?:Item};drops:{id:string;x:number;z:number;item:Item}[];rewards:string[];chosenRelic:string;randomDrops:number};
+export const ARMOR_SLOTS = ['helmet','chest','arms','legs'] as const;
+export type ArmorSlot = typeof ARMOR_SLOTS[number];
+export const ARMOR_SHARE:Record<ArmorSlot,number> = {helmet:.2,chest:.4,arms:.2,legs:.2};
+export const ARMOR_NAMES:Record<ArmorSlot,string> = {helmet:'Helm',chest:'Cuirass',arms:'Vambraces',legs:'Greaves'};
+export const EQUIPMENT_SLOTS = ['weapon',...ARMOR_SLOTS,'relic'] as const;
+export const isArmorSlot = (slot:string):slot is ArmorSlot => (ARMOR_SLOTS as readonly string[]).includes(slot);
+export type Item = {id:string;base:string;name:string;slot:'weapon'|ArmorSlot|'relic'|'mod';rarity:'common'|'magic'|'rare'|'legendary';classId?:ClassId;affixes:{id:keyof typeof AFFIXES;value:number}[];mod?:string};
+export type PrivateState = {bag:Item[];equipment:{weapon:Item;relic?:Item}&Record<ArmorSlot,Item>;drops:{id:string;x:number;z:number;item:Item}[];rewards:string[];chosenRelic:string;randomDrops:number};

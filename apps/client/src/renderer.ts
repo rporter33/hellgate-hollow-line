@@ -27,7 +27,7 @@ export class Renderer {
  }
  applySettings(){this.camera.fov=settings.fov;this.camera.updateProjectionMatrix();this.renderer.setPixelRatio(Math.min(devicePixelRatio,settings.quality==='low'?1:1.5));}
  resetSession(){for(const rig of this.actors.values()){this.scene.remove(rig);rig.traverse(o=>{if(o instanceof T.Mesh){if(o.geometry!==cubeGeometry&&o.geometry!==circleGeometry&&!o.geometry.userData.shared)o.geometry.dispose();(o.material as T.Material).dispose();}});}this.actors.clear();for(const map of [this.fx,this.loot]){for(const group of map.values()){this.scene.remove(group);for(const o of group.children)((o as T.Mesh).material as T.Material).dispose();}map.clear();}for(const t of this.transient){const o=t.object as T.Line;this.scene.remove(o);o.geometry.dispose();(o.material as T.Material).dispose();}this.transient=[];this.particleData=[];this.pending=[];this.inspection=false;this.camera.clearViewOffset();this.camera.fov=settings.fov;this.camera.updateProjectionMatrix();this.particles.count=0;}
- setInventory(v:PrivateState){this.inventory=v;let speed=0;for(const item of [v.equipment.weapon,v.equipment.armor])for(const a of item.affixes)if(AFFIXES[a.id].stat==='speed')speed+=a.value;this.speed=1+Math.min(.2,speed);}
+ setInventory(v:PrivateState){this.inventory=v;let speed=0;for(const item of Object.values(v.equipment))for(const a of item?.affixes||[])if(AFFIXES[a.id].stat==='speed')speed+=a.value;this.speed=1+Math.min(.2,speed);}
  predict(input:Input){if(!this.state)return;if(this.revision!==this.state.revision){const p=this.state.players.get(this.localId);if(!p)return;this.predicted={x:p.x,z:p.z};this.pending=[];this.revision=this.state.revision;this.ack=-1;}
   if(input.menu)return;this.pending.push({...input});if(this.pending.length>30)this.pending.shift();this.predictStep(input);}
  predictStep(i:Input){const p=this.state?.players?.get(this.localId);if(!p||p.status!=='standing'||i.menu)return;const len=Math.max(1,Math.hypot(i.mx,i.mz));const speed=5*this.speed*(p.action==='charge'?.6:p.action==='whirlwind'?.5:1);move(this.predicted,(i.mx*Math.cos(i.yaw)+i.mz*Math.sin(i.yaw))/len*speed/30,(i.mx*Math.sin(i.yaw)-i.mz*Math.cos(i.yaw))/len*speed/30,this.state.stage,new Set(this.state.broken.keys()));}
@@ -58,7 +58,7 @@ export class Renderer {
    const v=new Voxels().box(-Math.round(box.w),0,-Math.round(box.d),Math.round(box.w*2),Math.round(box.h*2),Math.round(box.d*2),box.breakable?0x846747:0x596568);
    if(box.breakable)v.box(-Math.round(box.w),Math.round(box.h*2)-1,-Math.round(box.d),Math.round(box.w*2),1,1,0xebad4f);
    if(box.id==='bus'){v.cells.clear();v.box(-3,0,-9,6,2,18,0x343a3a).box(-3,2,-9,6,11,18,0x873e33);for(let z=-7;z<8;z+=4){v.box(-3,4,z,6,3,2,0x57747b);v.box(-3,9,z,6,3,2,0x57747b);}v.box(-3,4,-9,6,3,1,0x9fa099).box(-3,10,-9,6,2,1,0x89979b).box(-3,8,-10,6,1,1,0xc2a572);v.box(-4,0,-6,1,3,3,0x24292c).box(3,0,-6,1,3,3,0x24292c).box(-4,0,4,1,3,3,0x24292c).box(3,0,4,1,3,3,0x24292c);}
-   const m=v.mesh();m.position.set(box.x,0,box.z);this.groups.set(box.id,m);this.world.add(m);
+   const m=v.mesh();if(box.id==='bus')m.scale.y=box.h/6.5;m.position.set(box.x,0,box.z);this.groups.set(box.id,m);this.world.add(m);
   }
   const gate=new T.Mesh(new T.PlaneGeometry(3.8,4.5),new T.MeshBasicMaterial({color:0x6de3d5,transparent:true,opacity:.23,side:T.DoubleSide}));gate.position.set(0,2.25,-zone.depth/2+.2);this.world.add(gate);
   const halo=new T.Mesh(new T.TorusGeometry(2,.09,4,24),new T.MeshBasicMaterial({color:0x80f7db}));halo.position.copy(gate.position);this.world.add(halo);

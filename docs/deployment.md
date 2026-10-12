@@ -26,4 +26,4 @@ Deploy a matching protocol/content server before publishing the client. `/health
 
 ## Current access state
 
-GitHub CLI access to `rporter33` was verified. Render and Railway plugins were discovered but neither is connected in this task. The managed environment has no configured Node-host credentials. Sites hosting helpers are not installed or readable here; Sites static hosting would still require the separate Node backend. No temporary tunnel is counted as a release.
+The source repository exists and Git transport can read it. This follow-up uses branch `codex/independent-armor-release-fixes`; deploy that branch for its preview or the reviewed matching revision after integration. Render was rediscovered and suggested during this task, but installation/connection has not been confirmed. The managed environment has no configured Node-host credentials. Static hosting alone cannot run the authoritative game server. No temporary tunnel is counted as a release.

@@ -1,6 +1,6 @@
 # Asset sources
 
-All visible world volumes, modular props, articulated character rigs, enemy rigs, boss plates, particles and loot beams are authored in this repository. Terrain cells use 0.5m voxels; actor cells use 0.125m voxels. Only exposed cell faces are merged into each mesh. Original station-sign textures are drawn locally with Canvas. No runtime image or font CDN is used.
+All visible world volumes, modular props, articulated character rigs, enemy rigs, boss plates, particles and loot beams are authored in this repository. Terrain cells use 0.5m voxels; character surface cells use 0.025m voxels, enemy surface cells use 0.03125m voxels, and architectural detail uses 0.0625m cells. Structural destruction uses larger authoritative blocks, separate from visual surface cells. Only exposed cell faces are merged into each mesh. Original station-sign textures are drawn locally with Canvas; a generated 32×16 masonry texture supplies mortar detail without subdividing every wall face. No runtime image or font CDN is used.
 
 Sound effects, bell harmonics and atmospheric drones are original Web Audio synthesis in `apps/client/src/audio.ts`. No third-party recordings are bundled.
 

@@ -25,6 +25,8 @@ export function botInput(state:any,p:any,sequence:number,crypt=false,latencySeco
  if(obstruction(p,target,state.stage,broken)){const next=waypoint(p,target,state.stage,broken,.4),yaw=Math.atan2(next.x-p.x,-(next.z-p.z)),delta=angleDiff(yaw,i.yaw);i.mx=Math.sin(delta);i.mz=Math.cos(delta);}
  const strikes=[...state.effects.values()].filter((f:any)=>f.kind==='ground_strike')as any[];
  if(strikes.some(f=>distance(p,f)<f.radius+.5)){const outward=escapeHazards(p,strikes,i.yaw,state.stage,broken),delta=angleDiff(outward,i.yaw);i.mx=Math.sin(delta);i.mz=Math.cos(delta);i.secondary=false;}
- if(ring&&now>=p.dodge){const towards=Math.atan2(ring.x-p.x,-(ring.z-p.z)),delta=angleDiff(towards,i.yaw);i.mx=Math.sin(delta);i.mz=Math.cos(delta);i.edges=i.edges.filter(e=>e!=='dodge');i.edges.push('dodge');}
+ const ringing=enemies.find(e=>e.action==='ring_tell'&&e.actionEnd-now+distance(e,p)/(20/2.2)<.19+Math.min(.15,latencySeconds));
+ const incomingRing=ring||ringing;
+ if(incomingRing&&now>=p.dodge){const towards=Math.atan2(incomingRing.x-p.x,-(incomingRing.z-p.z)),delta=angleDiff(towards,i.yaw);i.mx=Math.sin(delta);i.mz=Math.cos(delta);i.edges=i.edges.filter(e=>e!=='dodge');i.edges.push('dodge');}
  return i;
 }

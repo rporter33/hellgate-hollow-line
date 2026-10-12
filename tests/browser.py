@@ -21,7 +21,20 @@ async def main():
         await page.screenshot(path=str(output/'combat.png'))
         live=await page.evaluate('({state:window.__hollow.state,diagnostics:window.__hollow.diagnostics})'); assert live['state']['phase']=='play'
         assert sum(a['kills'] for a in live['state']['players'].values())>0, 'AI companions did not fight'
-        await page.keyboard.press('KeyI'); await page.locator('.inventory').wait_for(); await page.wait_for_function('window.__hollow.state.paused')
+        await page.wait_for_function("window.__hollow.personal?.bag.some(i => i.slot === 'helmet')", timeout=120000)
+        before_gear=await page.evaluate('Object.fromEntries(Object.entries(window.__hollow.personal.equipment).map(([slot,item])=>[slot,item.id]))')
+        await page.keyboard.press('KeyI'); await page.locator('.inventory').wait_for();
+        for slot in ['helmet','chest','arms','legs']:
+            assert await page.locator(f'.equipment [data-slot="{slot}"]').count()==1
+        await page.locator('.bag [data-slot="helmet"] button[data-op="equip"]').first.click()
+        await page.wait_for_function('(before) => window.__hollow.personal.equipment.helmet.id !== before', arg=before_gear['helmet'])
+        after_gear=await page.evaluate('Object.fromEntries(Object.entries(window.__hollow.personal.equipment).map(([slot,item])=>[slot,item.id]))')
+        for slot in ['chest','arms','legs']:
+            assert before_gear[slot]==after_gear[slot], 'Helmet equip changed another armor slot'
+        await page.locator('#rotate-gear').evaluate("el => { el.value='0.4'; el.dispatchEvent(new Event('input',{bubbles:true})); }")
+        await page.wait_for_timeout(150)
+        await page.screenshot(path=str(output/'independent-armor.png'))
+        await page.wait_for_function('window.__hollow.state.paused')
         t=await page.evaluate('window.__hollow.state.time'); await page.wait_for_timeout(350); assert await page.evaluate('window.__hollow.state.time')==t
         await page.screenshot(path=str(output/'inventory.png'))
         await page.locator('#close').click(); await page.wait_for_function('!!document.pointerLockElement')
@@ -45,7 +58,7 @@ async def main():
         for width,height in [(1920,1080),(1280,720)]:
             await page.set_viewport_size({'width':width,'height':height}); await page.locator('#settings').click(); box=await page.locator('.panel').bounding_box(); assert box['y']>=0 and box['y']+box['height']<=height+2; await page.locator('#back').click()
         assert not errors, errors
-        report={'browser':'Chromium '+browser.version,'renderer':'cloud Linux / SwiftShader; consumer GPU performance unverified','checks':['title and assets','class lobby','optional companions','pointer lock','keyboard movement','mouse firing','real companion kills','inventory','authoritative solo pause with companions','settings','refresh/reconnect same avatar','reconnect movement','ten room/rig restarts with stable GPU resources','1280x720 and 1920x1080 panels'],'errors':errors,'combat':live,'restartResources':[{'geometries':c['geometries'],'textures':c['textures']} for c in cycles]}
+        report={'browser':'Chromium '+browser.version,'renderer':'cloud Linux / SwiftShader; consumer GPU performance unverified','checks':['title and assets','class lobby','optional companions','pointer lock','keyboard movement','mouse firing','real companion kills','inventory','independent armor slots and helmet swap','authoritative solo pause with companions','settings','refresh/reconnect same avatar','reconnect movement','ten room/rig restarts with stable GPU resources','1280x720 and 1920x1080 panels'],'errors':errors,'combat':live,'restartResources':[{'geometries':c['geometries'],'textures':c['textures']} for c in cycles]}
         (output/'browser.json').write_text(json.dumps(report,indent=2)); print(json.dumps({k:v for k,v in report.items() if k!='combat'}))
         await browser.close()
 

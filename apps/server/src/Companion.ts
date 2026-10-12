@@ -1,4 +1,4 @@
-import {ENEMIES,type Item,RELICS} from '../../../packages/shared/src/content';
+import {ARMOR_SLOTS,ENEMIES,type Item,RELICS} from '../../../packages/shared/src/content';
 import {idleInput} from '../../../packages/shared/src/protocol';
 import {distance,angleDiff,obstruction} from '../../../packages/shared/src/math';
 import {waypoint,escapeHazards} from '../../../packages/shared/src/navigation';
@@ -9,7 +9,7 @@ export function companionInput(g:Game,p:ActorState){
  const s=g.s,now=s.time,i={...idleInput(),seq:p.ack+1,rev:s.revision},data=g.pd.get(p.id)!,inv=data.inventory;
  if(p.status!=='standing'||s.phase!=='play')return i;
  // Companions use the same validated inventory operations as humans.
- if(s.cleared){for(const slot of ['weapon','armor'] as const){const best=inv.bag.filter(a=>a.slot===slot).sort((a,b)=>score(b)-score(a))[0];if(best&&score(best)>score(inv.equipment[slot]))g.inventory(p.id,{op:'equip',id:best.id});}
+ if(s.cleared){for(const slot of ['weapon',...ARMOR_SLOTS] as const){const best=inv.bag.filter(a=>a.slot===slot).sort((a,b)=>score(b)-score(a))[0];if(best&&score(best)>score(inv.equipment[slot]))g.inventory(p.id,{op:'equip',id:best.id});}
   if(inv.rewards.includes('relic_choice')&&!inv.chosenRelic){const relic=RELICS.find(r=>r.classId===p.classId&&(p.classId!=='evoker'||r.id==='event_horizon'))!;g.inventory(p.id,{op:'choose_relic',id:relic.id});}
   if(inv.rewards.includes('crypt_mod_choice')&&!inv.rewards.includes('crypt_mod_chosen'))g.inventory(p.id,{op:'choose_mod',id:'blood_seal'});
   const mod=inv.bag.find(a=>a.slot==='mod');if(mod&&!p.mod)g.inventory(p.id,{op:'socket',id:mod.id});
@@ -37,6 +37,8 @@ export function companionInput(g:Game,p:ActorState){
  if(obstruction(p,target,s.stage,broken)){const next=waypoint(p,target,s.stage,broken,.4),yaw=Math.atan2(next.x-p.x,-(next.z-p.z)),delta=angleDiff(yaw,i.yaw);i.mx=Math.sin(delta);i.mz=Math.cos(delta);}
  const strikes=[...s.effects.values()].filter(f=>f.kind==='ground_strike');
  if(strikes.some(f=>distance(p,f)<f.radius+.5)){const outward=escapeHazards(p,strikes,i.yaw,s.stage,broken),delta=angleDiff(outward,i.yaw);i.mx=Math.sin(delta);i.mz=Math.cos(delta);i.secondary=false;}
- if(ring&&now>=p.dodge){const towards=Math.atan2(ring.x-p.x,-(ring.z-p.z)),delta=angleDiff(towards,i.yaw);i.mx=Math.sin(delta);i.mz=Math.cos(delta);i.edges=i.edges.filter(e=>e!=='dodge');i.edges.push('dodge');}
+ const ringing=enemies.find(e=>e.action==='ring_tell'&&e.actionEnd-now+distance(e,p)/(20/2.2)<.19);
+ const incomingRing=ring||ringing;
+ if(incomingRing&&now>=p.dodge){const towards=Math.atan2(incomingRing.x-p.x,-(incomingRing.z-p.z)),delta=angleDiff(towards,i.yaw);i.mx=Math.sin(delta);i.mz=Math.cos(delta);i.edges=i.edges.filter(e=>e!=='dodge');i.edges.push('dodge');}
  return i;
 }
