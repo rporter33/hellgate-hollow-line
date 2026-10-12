@@ -2,7 +2,7 @@
 
 An unofficial voxel action RPG fan sequel for **1–3 online players**, with optional AI companions filling empty squad slots. Three.js/Vite client; authoritative Node/Colyseus server. Original voxel art and synthesized audio.
 
-The expedition travels from the Strand through a collapsed Underground concourse and Signal chamber to the two-phase Bellwether. An optional maintenance crypt offers a mod choice. Blademaster, Marksman and Evoker have distinct resources and attacks; six Legendary relics change abilities. Loot is personal. Cover destruction, revives, checkpoint retries and 60-second reconnection are authoritative.
+The expedition travels from the Strand through a collapsed Underground concourse and Signal chamber to the two-phase Bellwether. An optional maintenance crypt offers a mod choice. Blademaster, Marksman and Evoker have distinct resources and attacks; six Legendary relics change abilities. Helmet, chest, arms and legs equip independently and visibly change the attached armor. Loot is personal. Cover destruction, revives, checkpoint retries and 60-second reconnection are authoritative.
 
 ## Run
 
@@ -46,6 +46,7 @@ Only a single **human** player's menu pauses the server, including when accompan
 ```sh
 npm run typecheck
 npm test
+npm run test:regressions
 npm run test:rooms
 npm run test:full
 npm run build
@@ -53,7 +54,7 @@ npm run build
 npm run test:browser
 ```
 
-`test:full` uses actual independent WebSocket clients and a bidirectional latency proxy, not fake network players. It completes all solo classes and two- and three-player missions. See [validation](docs/validation.md) for observed evidence and open gates. No human playtest or consumer-device performance claim is implied by bots or cloud Chromium.
+`test:full` uses actual independent WebSocket clients and a bidirectional latency proxy, not fake network players. It exercises all solo classes and two- and three-player missions. All five local network rosters passed after fixing failure reporting, message ordering in the latency proxy, and melee agents reacting too late to ring windups. See [validation](docs/validation.md) for observed evidence and open gates. No human playtest or consumer-device performance claim is implied by bots or cloud Chromium.
 
 ## Deploy
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ActorState,WorldState} from '../packages/shared/src/schema';
-import {obstacles,PROTOCOL,CONTENT} from '../packages/shared/src/content';
+import {obstacles,PROTOCOL,CONTENT,ARMOR_SLOTS,type PrivateState} from '../packages/shared/src/content';
 import {unsupportedBlocks} from '../packages/shared/src/architecture';
 import {move,obstruction,rayBox3} from '../packages/shared/src/math';
 import {idleInput} from '../packages/shared/src/protocol';
@@ -44,9 +44,13 @@ test('three actual clients share charged-shot masonry collapse, gear appearance 
   for(const r of rooms)assert.equal(r.state.broken.has(stone),true);assert.ok([...a.state.effects.values()].some((f:any)=>f.kind==='collapse_warning'));
   await delay(2200);for(const r of rooms)assert.deepEqual([...r.state.broken.keys()],[...a.state.broken.keys()]);assert.ok(a.state.broken.size>6);
   held={yaw:Math.PI/2,mz:1};await delay(850);held={yaw:Math.PI/2};await delay(150);assert.ok(a.state.players.get(a.sessionId).x>12.6,'player crosses the hole created by the shot and collapse');
-  const pc=authority.state.players.get(c.sessionId)!,item=authority.game.rollItem(pc,'armor','rare');authority.game.give(pc,item);await delay(100);c.send('inventory',{op:'equip',id:item.id,rev:c.state.revision});await delay(150);
-  for(const r of rooms)assert.ok(r.state.players.get(c.sessionId).armorLook.startsWith('rare:'));
-  const token=c.reconnectionToken,id=c.sessionId;c.connection.close();await delay(200);current=await sdk.reconnect(token);current.onMessage('event',()=>{});current.onMessage('personal',()=>{});await delay(200);assert.equal(current.sessionId,id);assert.deepEqual([...current.state.broken.keys()],[...a.state.broken.keys()]);assert.ok(current.state.players.get(id).armorLook.startsWith('rare:'));
-  clearInterval(interval);interval=undefined;authority.state.phase='wipe';a.send('retry');await delay(200);for(const r of [a,b,current]){assert.equal(r.state.broken.has(stone),false);assert.ok(r.state.players.get(id).armorLook.startsWith('common:'));}
+  const pc=authority.state.players.get(c.sessionId)!,equipmentIds:Record<string,string>={};
+  for(const [index,slot]of ARMOR_SLOTS.entries()){
+   const item=authority.game.rollItem(pc,slot,'rare');equipmentIds[slot]=item.id;authority.game.give(pc,item);await delay(80);c.send('inventory',{op:'equip',id:item.id,rev:c.state.revision});await delay(120);
+   for(const r of rooms)for(const [n,otherSlot]of ARMOR_SLOTS.entries())assert.ok(r.state.players.get(c.sessionId)[`${otherSlot}Look`].startsWith(n<=index?'rare:':'common:'));
+  }
+  const token=c.reconnectionToken,id=c.sessionId;c.connection.close();await delay(200);current=await sdk.reconnect(token);current.onMessage('event',()=>{});let recovered:PrivateState|undefined;current.onMessage('personal',(v:PrivateState)=>recovered=v);current.send('personal');await delay(200);assert.equal(current.sessionId,id);assert.deepEqual([...current.state.broken.keys()],[...a.state.broken.keys()]);
+  for(const slot of ARMOR_SLOTS){assert.ok(current.state.players.get(id)[`${slot}Look`].startsWith('rare:'));assert.equal(recovered!.equipment[slot].id,equipmentIds[slot]);}
+  clearInterval(interval);interval=undefined;authority.state.phase='wipe';a.send('retry');await delay(200);for(const r of [a,b,current]){assert.equal(r.state.broken.has(stone),false);for(const slot of ARMOR_SLOTS)assert.ok(r.state.players.get(id)[`${slot}Look`].startsWith('common:'));}
  }finally{if(interval)clearInterval(interval);await Promise.all([a,b,current].map(r=>r.leave()));await server.gracefullyShutdown(false);}
 });

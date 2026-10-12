@@ -14,7 +14,9 @@ export async function startServer(port=Number(process.env.PORT||2567)) {
  app.get('/api/rooms/:code',(req,res)=>{const roomId=invites.get(req.params.code.toUpperCase());if(!roomId){res.status(404).json({error:'Invite not found. Check the six-character code.'});return;}const room=matchMaker.getLocalRoomById(roomId)as ExpeditionRoom;if(room.state.phase!=='lobby'){res.status(403).json({error:'This expedition has deployed. Only its reserved players can reconnect.'});return;}if([...room.state.players.values()].filter(p=>p.kind!=='companion').length>=3){res.status(409).json({error:'Room full. Maximum three online wardens.'});return;}res.json({roomId});});
  app.use(express.static(resolve('apps/client/dist')));
  const http=createServer(app);
- const server=new Server({transport:new WebSocketTransport({server:http,maxPayload:2048,verifyClient(info,cb){cb(validOrigin(info.origin,info.req.headers.host),403,'Origin not allowed');}})});
+ // Test runners own cleanup and failure reporting. Colyseus' global exception
+ // handler can swallow an assertion raised after the server has shut down.
+ const server=new Server({gracefullyShutdown:!process.env.HOLLOW_TEST,transport:new WebSocketTransport({server:http,maxPayload:2048,verifyClient(info,cb){cb(validOrigin(info.origin,info.req.headers.host),403,'Origin not allowed');}})});
  server.define('expedition',ExpeditionRoom);
  await server.listen(port,'0.0.0.0');console.log(`Hollow Line server listening on ${port}`);
  return {server,http,app};
