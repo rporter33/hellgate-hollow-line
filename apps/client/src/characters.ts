@@ -80,16 +80,60 @@ export function dress(rig:T.Group,p:Appearance){
  if(relicChanged){clearPart(rig,'gear_relic');if(p.relic){const color=p.relic==='red_wake'||p.relic==='cinder_choir'?0xee9e7c:p.relic==='event_horizon'?0xb4abed:0xe6c383;mesh(new Voxels().box(-1,27,4,2,3,1,color).box(-2,28,4,4,1,1,color),'gear_relic',spine);}}
 }
 
+// Weapon geometry uses -Z for barrels and +Y for sword blades.
+// Solve ranged orientation through the full parent transform, including torso lean.
+const aimRotation=new T.Quaternion(),parentRotation=new T.Quaternion();
+const aimEuler=new T.Euler();
 export function pose(rig:T.Group,p:any,time:number,walking:boolean,reduced:boolean){
  const kind=rig.userData.kind as ClassId,spine=rig.getObjectByName('spine')!;
  const phase=time*10,step=walking&&!reduced?Math.sin(phase)*.36:0;
- spine.position.y=walking&&!reduced?Math.abs(Math.sin(phase))*.025:0;spine.rotation.x=p.action==='dodge'?.25:p.action==='lunge'?.15:0;
- for(const side of [-1,1]){const s=side<0?'L':'R',arm=rig.getObjectByName('arm'+s)!,elbow=rig.getObjectByName('elbow'+s)!,leg=rig.getObjectByName('leg'+s)!,knee=rig.getObjectByName('knee'+s)!;
-  leg.rotation.x=step*side;knee.rotation.x=-Math.max(0,step*side)*.6;arm.rotation.set(kind==='marksman'?.6:kind==='evoker'?.7:-step*side*.5,0,side*-.06);elbow.rotation.x=kind==='marksman'?1.1:kind==='evoker'?.6:.1;
-  if(kind==='blademaster'&&['primary','whirlwind'].includes(p.action)){arm.rotation.x=.8;arm.rotation.z=side*(.35+Math.sin(time*22)*.6);elbow.rotation.x=.4;}
-  if(kind==='evoker'&&['arc','well'].includes(p.action))arm.rotation.x=1.3;
-  if(kind==='marksman'&&p.action==='reload'){arm.rotation.x=.9;elbow.rotation.x=1.4;}
-  const weapon=rig.getObjectByName('gear_weapon'+side);if(weapon&&kind!=='blademaster')weapon.rotation.x=-(arm.rotation.x+elbow.rotation.x)+p.pitch;
+ const progress=(duration:number)=>T.MathUtils.clamp(1-(p.actionEnd-time)/duration,0,1);
+ const pitch=Number.isFinite(p.pitch)?T.MathUtils.clamp(p.pitch,-1.3,1.3):0;
+ spine.position.y=walking&&!reduced?Math.abs(Math.sin(phase))*.025:0;
+ spine.rotation.set(p.action==='dodge'?.25:p.action==='lunge'?.15:0,0,0);
+ if(kind==='blademaster'&&p.action==='primary')spine.rotation.y=Math.sin(progress(.24)*Math.PI*2)*.18;
+ if(p.action==='whirlwind'&&!reduced)spine.rotation.y=progress(.65)*Math.PI*2;
+ for(const side of [-1,1]){
+  const s=side<0?'L':'R',arm=rig.getObjectByName('arm'+s)!,elbow=rig.getObjectByName('elbow'+s)!,hand=rig.getObjectByName('hand'+s)!,leg=rig.getObjectByName('leg'+s)!,knee=rig.getObjectByName('knee'+s)!;
+  leg.rotation.x=step*side;knee.rotation.x=-Math.max(0,step*side)*.6;
+  hand.rotation.set(0,0,0);elbow.rotation.set(.35,0,0);
+  arm.rotation.set(.18-step*side*.25,0,side*.12);
+  const weapon=rig.getObjectByName('gear_weapon'+side);
+  if(kind==='blademaster'){
+   // Upright, outward guard; each blade sweeps down and across from the shoulder.
+   if(weapon)weapon.rotation.set(-.4,0,-side*.2);
+   if(p.action==='primary'){
+    const swing=T.MathUtils.smoothstep(T.MathUtils.clamp(progress(.24)-(side<0?.12:0),0,1),0,.88);
+    arm.rotation.set(-.55+swing*1.75,side*(.55-swing*1.1),side*(.45-swing*.7));
+    elbow.rotation.x=.55;
+    if(weapon)weapon.rotation.x=-.25-swing*.8;
+   }else if(p.action==='whirlwind'){
+    arm.rotation.set(.3,0,side*1.15);elbow.rotation.x=.2;
+    if(weapon)weapon.rotation.set(-.35,0,-side*1.1);
+   }else if(p.action==='lunge'){
+    arm.rotation.set(1.05,0,side*.15);elbow.rotation.x=.4;
+    if(weapon)weapon.rotation.x=-Math.PI/2-1.45;
+   }
+  }else{
+   // Raise the hands to chest height; keep the muzzle aligned with the aim.
+   arm.rotation.set(.6+pitch*.45,0,side*-.06);elbow.rotation.x=1.1+pitch*.55;
+   if(kind==='evoker'){arm.rotation.x=.7+pitch*.5;elbow.rotation.x=.6+pitch*.5;}
+   if(kind==='evoker'&&['arc','well'].includes(p.action)){arm.rotation.x=1.1+pitch*.5;elbow.rotation.x=.35+pitch*.5;}
+   let weaponPitch=pitch;
+   if(kind==='marksman'&&p.action==='reload'){
+    const reload=Math.sin(progress(1.2)*Math.PI);
+    arm.rotation.x=.6-reload*.35;elbow.rotation.x=1.1+reload*.25;weaponPitch-=reload*.55;
+   }else if(['primary','execution'].includes(p.action)&&!reduced){
+    const recoil=Math.sin(progress(p.action==='execution'?.3:kind==='marksman'?.12:.16)*Math.PI);
+    arm.rotation.x-=recoil*.07;weaponPitch+=recoil*.06;
+   }
+   if(weapon){
+    rig.updateWorldMatrix(true,true);
+    rig.getWorldQuaternion(aimRotation);
+    aimRotation.multiply(parentRotation.setFromEuler(aimEuler.set(weaponPitch,0,0)));
+    hand.getWorldQuaternion(parentRotation);
+    weapon.quaternion.copy(parentRotation.invert().multiply(aimRotation));
+   }
+  }
  }
- if(!reduced)spine.rotation.y=p.action==='whirlwind'?time*15:0;
 }
